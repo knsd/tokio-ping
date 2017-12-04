@@ -1,3 +1,4 @@
+extern crate atomic;
 #[macro_use] extern crate error_chain;
 extern crate futures;
 extern crate lazy_socket;

@@ -4,13 +4,15 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::rc::Rc;
+use std::sync::atomic::{Ordering, AtomicUsize};
 use std::time::Duration;
 
+use atomic::Atomic;
 use futures::future;
 use futures::sync::oneshot;
 use futures::{Future, Poll, Async};
 use lazy_socket::raw::{Family, Protocol, Type};
-use rand::{Rng, StdRng};
+use rand::random;
 use time::precise_time_s;
 use tokio_core::reactor::{Handle, Timeout};
 
@@ -81,71 +83,58 @@ impl Drop for PingFuture {
     }
 }
 
-pub struct PingChain<'a> {
-    ping: &'a mut Ping,
+pub struct PingChain {
+    ping: Ping,
     hostname: Ipv4Addr,
-    ident: Option<u16>,
-    seq_cnt: Option<u16>,
-    timeout: Option<Duration>,
+    ident: AtomicUsize,
+    seq_cnt: AtomicUsize,
+    timeout: Atomic<Duration>,
 }
 
-impl<'a> PingChain<'a> {
-    fn new(ping: &'a mut Ping, hostname: Ipv4Addr) -> Self {
+impl PingChain {
+    fn new(ping: Ping, hostname: Ipv4Addr) -> Self {
         Self {
             ping: ping,
             hostname: hostname,
-            ident: None,
-            seq_cnt: None,
-            timeout: None,
+            ident: AtomicUsize::new(random()),
+            seq_cnt: AtomicUsize::new(0),
+            timeout: Atomic::new(Duration::from_secs(DEFAULT_TIMEOUT)),
         }
     }
 
-    pub fn ident(&mut self, ident: u16) -> &mut Self {
-        self.ident = Some(ident);
+    pub fn ident(&self, ident: u16) -> &Self {
+        self.ident.store(ident as usize, Ordering::SeqCst);
         self
     }
 
-    pub fn seq_cnt(&mut self, seq_cnt: u16) -> &mut Self {
-        self.seq_cnt = Some(seq_cnt);
+    pub fn seq_cnt(&self, seq_cnt: u16) -> &Self {
+        self.seq_cnt.store(seq_cnt as usize, Ordering::SeqCst);
         self
     }
 
-    pub fn timeout(&mut self, timeout: Duration) -> &mut Self {
-        self.timeout = Some(timeout);
+    pub fn timeout(&self, timeout: Duration) -> &Self {
+        self.timeout.store(timeout, Ordering::SeqCst);
         self
     }
 
-    pub fn send(&mut self) -> PingFuture {
-        let timeout = self.timeout.unwrap_or_else(|| Duration::from_secs(DEFAULT_TIMEOUT));
-        let ident = match self.ident {
-            Some(ident) => ident,
-            None => {
-                let ident = self.ping.rng.gen();
-                self.ident = Some(ident);
-                ident
-            }
-        };
-
-        let seq_cnt = match self.seq_cnt {
-            Some(seq_cnt) => {
-                self.seq_cnt = Some(seq_cnt + 1);
-                seq_cnt
-            },
-            None => {
-                self.seq_cnt = Some(0);
-                0
-            }
-        };
+    pub fn send(&self) -> PingFuture {
+        let timeout = self.timeout.load(Ordering::SeqCst);
+        let ident = self.ident.load(Ordering::SeqCst) as u16;
+        let seq_cnt = self.seq_cnt.fetch_add(1, Ordering::SeqCst) as u16;
 
         self.ping.ping(self.hostname, ident, seq_cnt, timeout)
     }
 }
 
+#[derive(Clone)]
 pub struct Ping {
+    inner: Rc<PingInner>
+}
+
+struct PingInner {
     socket: Socket,
     state: PingState,
     handle: Handle,
-    rng: StdRng,
     _finalize: oneshot::Sender<()>,
 }
 
@@ -159,23 +148,26 @@ impl Ping {
 
         handle.spawn(receiver);
 
-        Ok(Self {
+        let inner = PingInner {
             socket: socket,
             state: state,
             handle: handle.clone(),
-            rng: StdRng::new()?,
             _finalize: finalize,
+        };
+
+        Ok(Self {
+            inner: Rc::new(inner)
         })
     }
 
-    pub fn chain<'a>(&'a mut self, hostname: Ipv4Addr) -> PingChain<'a> {
-        PingChain::new(self, hostname)
+    pub fn chain(&self, hostname: Ipv4Addr) -> PingChain {
+        PingChain::new(self.clone(), hostname)
     }
 
-    pub fn ping(&mut self, hostname: Ipv4Addr, ident: u16, seq_cnt: u16, timeout: Duration) -> PingFuture {
+    pub fn ping(&self, hostname: Ipv4Addr, ident: u16, seq_cnt: u16, timeout: Duration) -> PingFuture {
         let (sender, receiver) = oneshot::channel();
 
-        let timeout_future = future::result(Timeout::new(timeout, &self.handle))
+        let timeout_future = future::result(Timeout::new(timeout, &self.inner.handle))
             .flatten().map_err(From::from).map(|()| None);
 
         let send_future = receiver.and_then(|time| {
@@ -186,18 +178,18 @@ impl Ping {
             .map(|(item, _next)| item)
             .map_err(|(item, _next)| item);
 
-        let opaque_ref_bytes: OpaqueRef = self.rng.gen();
-        self.state.insert(opaque_ref_bytes, sender);
+        let opaque_ref_bytes: OpaqueRef = random();
+        self.inner.state.insert(opaque_ref_bytes, sender);
 
         let dest = SocketAddr::new(hostname.into(), 1);
 
-        let socket = self.socket.clone();
-        self.handle.spawn_fn(move ||{
+        let socket = self.inner.socket.clone();
+        self.inner.handle.spawn_fn(move ||{
             let packet = IcmpMessage::echo_request(ident, seq_cnt, &opaque_ref_bytes);
             socket.send_to(packet.encode(), &dest).then(|_| Ok(()))
         });
 
-        PingFuture::new(Box::new(future), self.state.clone(), opaque_ref_bytes)
+        PingFuture::new(Box::new(future), self.inner.state.clone(), opaque_ref_bytes)
     }
 }
 
