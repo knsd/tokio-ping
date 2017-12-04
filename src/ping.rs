@@ -21,12 +21,12 @@ use packet::IcmpMessage;
 use socket::Socket;
 
 const DEFAULT_TIMEOUT: u64 = 2;
-type OpaqueRef = [u8; 32];
+type Token = [u8; 32];
 
 
 #[derive(Clone)]
 struct PingState {
-    inner: Rc<RefCell<HashMap<OpaqueRef, oneshot::Sender<f64>>>>,
+    inner: Rc<RefCell<HashMap<Token, oneshot::Sender<f64>>>>,
 }
 
 impl PingState {
@@ -36,7 +36,7 @@ impl PingState {
         }
     }
 
-    fn insert(&self, key: OpaqueRef, value: oneshot::Sender<f64>) {
+    fn insert(&self, key: Token, value: oneshot::Sender<f64>) {
         self.inner.borrow_mut().insert(key, value);
     }
 
@@ -49,16 +49,16 @@ pub struct PingFuture {
     start_time: f64,
     inner: Box<Future<Item=Option<f64>, Error=Error>>,
     state: PingState,
-    opaque_ref: OpaqueRef,
+    token: Token,
 }
 
 impl PingFuture {
-    fn new(future: Box<Future<Item=Option<f64>, Error=Error>>, state: PingState, opaque_ref: OpaqueRef) -> Self {
+    fn new(future: Box<Future<Item=Option<f64>, Error=Error>>, state: PingState, token: Token) -> Self {
         PingFuture {
             start_time: precise_time_s(),
             inner: future,
             state: state,
-            opaque_ref: opaque_ref
+            token: token
         }
     }
 }
@@ -79,7 +79,7 @@ impl Future for PingFuture {
 
 impl Drop for PingFuture {
     fn drop(&mut self) {
-        self.state.remove(&self.opaque_ref);
+        self.state.remove(&self.token);
     }
 }
 
@@ -178,18 +178,18 @@ impl Ping {
             .map(|(item, _next)| item)
             .map_err(|(item, _next)| item);
 
-        let opaque_ref_bytes: OpaqueRef = random();
-        self.inner.state.insert(opaque_ref_bytes, sender);
+        let token = random();
+        self.inner.state.insert(token, sender);
 
         let dest = SocketAddr::new(hostname.into(), 1);
 
         let socket = self.inner.socket.clone();
         self.inner.handle.spawn_fn(move ||{
-            let packet = IcmpMessage::echo_request(ident, seq_cnt, &opaque_ref_bytes);
+            let packet = IcmpMessage::echo_request(ident, seq_cnt, &token);
             socket.send_to(packet.encode(), &dest).then(|_| Ok(()))
         });
 
-        PingFuture::new(Box::new(future), self.inner.state.clone(), opaque_ref_bytes)
+        PingFuture::new(Box::new(future), self.inner.state.clone(), token)
     }
 }
 
