@@ -1,0 +1,14 @@
+[package]
+name = "tokio-ping"
+version = "0.1.0"
+authors = ["Fedor Gogolev <knsd@knsd.net>"]
+
+[dependencies]
+error-chain = "0.11"
+futures = "0.1"
+lazy-socket = "0.2.1"
+libc = "0.2"
+mio = "0.6"
+rand = "0.3"
+time = "0.1"
+tokio-core = "0.1"
