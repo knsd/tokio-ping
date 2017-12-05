@@ -3,7 +3,7 @@ use std::io;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::atomic::{Ordering, AtomicUsize};
 use std::time::Duration;
 
@@ -126,6 +126,34 @@ impl PingChain {
     }
 }
 
+struct Finalize {
+    inner: Rc<()>,
+}
+
+impl Finalize {
+    fn new() -> Self {
+        Self {
+            inner: Rc::new(())
+        }
+    }
+
+    fn handle(&self) -> FinalizeHandle {
+        FinalizeHandle {
+            inner: Rc::downgrade(&self.inner)
+        }
+    }
+}
+
+struct FinalizeHandle {
+    inner: Weak<()>
+}
+
+impl FinalizeHandle {
+    fn is_alive(&self) -> bool {
+        self.inner.upgrade().is_some()
+    }
+}
+
 #[derive(Clone)]
 pub struct Ping {
     inner: Rc<PingInner>
@@ -135,8 +163,7 @@ struct PingInner {
     sockets: Sockets,
     state: PingState,
     handle: Handle,
-    _v4_finalize: Option<oneshot::Sender<()>>,
-    _v6_finalize: Option<oneshot::Sender<()>>,
+    _finalize: Finalize,
 }
 
 enum Sockets {
@@ -187,29 +214,27 @@ impl Ping {
         let sockets = Sockets::new(handle)?;
 
         let state = PingState::new();
+        let finalize = Finalize::new();
 
-        let v4_finalize = if let Some(v4_socket) = sockets.v4() {
-            let (receiver, finalize) = Receiver::<IcmpV4Message>::new(v4_socket.clone(), state.clone());
+        if let Some(v4_socket) = sockets.v4() {
+            let receiver = Receiver::<IcmpV4Message>::new(v4_socket.clone(),
+                                                          state.clone(),
+                                                          finalize.handle());
             handle.spawn(receiver);
-            Some(finalize)
-        } else {
-            None
-        };
+        }
 
-        let v6_finalize = if let Some(v6_socket) = sockets.v6() {
-            let (receiver, finalize) = Receiver::<IcmpV6Message>::new(v6_socket.clone(), state.clone());
+        if let Some(v6_socket) = sockets.v6() {
+            let receiver = Receiver::<IcmpV6Message>::new(v6_socket.clone(),
+                                                          state.clone(),
+                                                          finalize.handle());
             handle.spawn(receiver);
-            Some(finalize)
-        } else {
-            None
-        };
+        }
 
         let inner = PingInner {
             sockets: sockets,
             state: state,
             handle: handle.clone(),
-            _v4_finalize: v4_finalize,
-            _v6_finalize: v6_finalize,
+            _finalize: finalize,
         };
 
         Ok(Self {
@@ -268,7 +293,7 @@ impl Ping {
 
 struct Receiver<Message> {
     socket: Socket,
-    finalize: oneshot::Receiver<()>,
+    finalize: FinalizeHandle,
     state: PingState,
     buffer: [u8; 2048],
     _phantom: ::std::marker::PhantomData<Message>,
@@ -303,18 +328,17 @@ impl<'b> ParseReply for IcmpV6Message<'b> {
 }
 
 impl<Proto> Receiver<Proto> {
-    fn new(socket: Socket, state: PingState) -> (Self, oneshot::Sender<()>) {
-        let (finalize_sender, finalize_receiver) = oneshot::channel();
+    fn new(socket: Socket, state: PingState, finalize: FinalizeHandle) -> Self {
 
         let receiver = Self {
             socket: socket,
-            finalize: finalize_receiver,
+            finalize: finalize,
             state: state,
             buffer: [0; 2048],
             _phantom: ::std::marker::PhantomData,
         };
 
-        (receiver, finalize_sender)
+        receiver
     }
 }
 
@@ -323,9 +347,8 @@ impl<Message: ParseReply> Future for Receiver<Message> {
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.finalize.poll() {
-            Ok(Async::NotReady) => (),
-            _ => return Ok(Async::Ready(())),
+        if !self.finalize.is_alive() {
+            return Ok(Async::Ready(()))
         }
 
         match self.socket.recv(&mut self.buffer) {
