@@ -5,5 +5,6 @@ error_chain! {
 
     errors {
         PingInternalError
+        InvalidProto
     }
 }
