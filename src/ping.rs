@@ -45,6 +45,7 @@ impl PingState {
     }
 }
 
+/// Represent a future that resolves into ping response time, resolves into `None` if timed out.
 #[must_use = "futures do nothing unless polled"]
 pub struct PingFuture {
     start_time: f64,
@@ -84,6 +85,7 @@ impl Drop for PingFuture {
     }
 }
 
+/// Ping the same host several times.
 pub struct PingChain {
     pinger: Pinger,
     hostname: IpAddr,
@@ -103,21 +105,26 @@ impl PingChain {
         }
     }
 
+    /// Set ICMP ident. Default value is randomized.
     pub fn ident(&self, ident: u16) -> &Self {
         self.ident.store(ident as usize, Ordering::SeqCst);
         self
     }
 
+    /// Set ICMP seq_cnt, this value will be incremented by one for every `send`.
+    /// Default value is 0.
     pub fn seq_cnt(&self, seq_cnt: u16) -> &Self {
         self.seq_cnt.store(seq_cnt as usize, Ordering::SeqCst);
         self
     }
 
+    /// Set ping timeout. Default timeout is two seconds.
     pub fn timeout(&self, timeout: Duration) -> &Self {
         self.timeout.store(timeout, Ordering::SeqCst);
         self
     }
 
+    /// Send ICMP request and wait for response.
     pub fn send(&self) -> PingFuture {
         let timeout = self.timeout.load(Ordering::SeqCst);
         let ident = self.ident.load(Ordering::SeqCst) as u16;
@@ -155,6 +162,7 @@ impl FinalizeHandle {
     }
 }
 
+/// ICMP packets sender and receiver.
 #[derive(Clone)]
 pub struct Pinger {
     inner: Rc<PingInner>
@@ -211,6 +219,8 @@ impl Sockets {
 }
 
 impl Pinger {
+
+    /// Create new `Pinger` instance, will fail if unable to create both IPv4 and IPv6 sockets.
     pub fn new(handle: &Handle) -> io::Result<Self> {
         let sockets = Sockets::new(handle)?;
 
@@ -243,10 +253,12 @@ impl Pinger {
         })
     }
 
+    /// Ping the same host several times.
     pub fn chain(&self, hostname: IpAddr) -> PingChain {
         PingChain::new(self.clone(), hostname)
     }
 
+    /// Send ICMP request and wait for response.
     pub fn ping(&self, hostname: IpAddr, ident: u16, seq_cnt: u16, timeout: Duration) -> PingFuture {
         let (sender, receiver) = oneshot::channel();
 
