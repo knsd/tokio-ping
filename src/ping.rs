@@ -45,6 +45,7 @@ impl PingState {
     }
 }
 
+#[must_use = "futures do nothing unless polled"]
 pub struct PingFuture {
     start_time: f64,
     inner: Box<Future<Item=Option<f64>, Error=Error>>,
