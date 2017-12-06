@@ -3,6 +3,10 @@ name = "tokio-ping"
 version = "0.1.0"
 license = "MIT/Apache-2.0"
 authors = ["Fedor Gogolev <knsd@knsd.net>"]
+documentation = "https://docs.rs/tokio-ping"
+repository = "https://github.com/knsd/tokio-ping"
+description = "Asynchronous ICMP pinging library"
+keywords = ["tokio", "icmp", "ping"]
 
 [dependencies]
 error-chain = "0.11"
