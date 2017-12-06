@@ -278,7 +278,7 @@ impl Ping {
             Some(socket) => socket,
             None => {
                 return PingFuture::new(Box::new(
-                    future::err(ErrorKind::InvalidProto.into())
+                    future::err(ErrorKind::InvalidProtocol.into())
                 ), self.inner.state.clone(), token)
             }
         };
