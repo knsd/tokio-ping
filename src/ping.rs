@@ -49,16 +49,16 @@ impl PingState {
 pub struct PingFuture {
     start_time: f64,
     inner: Box<Future<Item=Option<f64>, Error=Error>>,
-    state: PingState,
+    pinger: Pinger,
     token: Token,
 }
 
 impl PingFuture {
-    fn new(future: Box<Future<Item=Option<f64>, Error=Error>>, state: PingState, token: Token) -> Self {
+    fn new(future: Box<Future<Item=Option<f64>, Error=Error>>, pinger: Pinger, token: Token) -> Self {
         PingFuture {
             start_time: precise_time_s(),
             inner: future,
-            state: state,
+            pinger: pinger,
             token: token
         }
     }
@@ -80,7 +80,7 @@ impl Future for PingFuture {
 
 impl Drop for PingFuture {
     fn drop(&mut self) {
-        self.state.remove(&self.token);
+        self.pinger.inner.state.remove(&self.token);
     }
 }
 
@@ -280,7 +280,7 @@ impl Pinger {
             None => {
                 return PingFuture::new(Box::new(
                     future::err(ErrorKind::InvalidProtocol.into())
-                ), self.inner.state.clone(), token)
+                ), self.clone(), token)
             }
         };
 
@@ -288,7 +288,7 @@ impl Pinger {
             socket.send_to(packet, &dest).then(|_| Ok(()))
         });
 
-        PingFuture::new(Box::new(future), self.inner.state.clone(), token)
+        PingFuture::new(Box::new(future), self.clone(), token)
     }
 }
 
