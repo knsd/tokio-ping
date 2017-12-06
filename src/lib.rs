@@ -1,4 +1,3 @@
-extern crate atomic;
 #[macro_use] extern crate error_chain;
 extern crate futures;
 extern crate lazy_socket;
@@ -14,4 +13,4 @@ mod ping;
 mod socket;
 
 pub use errors::{Error, ErrorKind};
-pub use ping::{Pinger, PingChain, PingFuture};
+pub use ping::{Pinger, PingChain, PingChainStream, PingFuture};

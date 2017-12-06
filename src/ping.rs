@@ -4,13 +4,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::rc::{Rc, Weak};
-use std::sync::atomic::{Ordering, AtomicUsize};
 use std::time::Duration;
 
-use atomic::Atomic;
 use futures::future;
 use futures::sync::oneshot;
-use futures::{Future, Poll, Async};
+use futures::{Future, Stream, Poll, Async};
 use lazy_socket::raw::{Family, Protocol, Type};
 use rand::random;
 use time::precise_time_s;
@@ -89,9 +87,9 @@ impl Drop for PingFuture {
 pub struct PingChain {
     pinger: Pinger,
     hostname: IpAddr,
-    ident: AtomicUsize,
-    seq_cnt: AtomicUsize,
-    timeout: Atomic<Duration>,
+    ident: Option<u16>,
+    seq_cnt: Option<u16>,
+    timeout: Option<Duration>,
 }
 
 impl PingChain {
@@ -99,38 +97,100 @@ impl PingChain {
         Self {
             pinger: pinger,
             hostname: hostname,
-            ident: AtomicUsize::new(random()),
-            seq_cnt: AtomicUsize::new(0),
-            timeout: Atomic::new(Duration::from_secs(DEFAULT_TIMEOUT)),
+            ident: None,
+            seq_cnt: None,
+            timeout: None,
         }
     }
 
     /// Set ICMP ident. Default value is randomized.
-    pub fn ident(&self, ident: u16) -> &Self {
-        self.ident.store(ident as usize, Ordering::SeqCst);
+    pub fn ident(mut self, ident: u16) -> Self {
+        self.ident = Some(ident);
         self
     }
 
     /// Set ICMP seq_cnt, this value will be incremented by one for every `send`.
     /// Default value is 0.
-    pub fn seq_cnt(&self, seq_cnt: u16) -> &Self {
-        self.seq_cnt.store(seq_cnt as usize, Ordering::SeqCst);
+    pub fn seq_cnt(mut self, seq_cnt: u16) -> Self {
+        self.seq_cnt = Some(seq_cnt);
         self
     }
 
     /// Set ping timeout. Default timeout is two seconds.
-    pub fn timeout(&self, timeout: Duration) -> &Self {
-        self.timeout.store(timeout, Ordering::SeqCst);
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
         self
     }
 
     /// Send ICMP request and wait for response.
-    pub fn send(&self) -> PingFuture {
-        let timeout = self.timeout.load(Ordering::SeqCst);
-        let ident = self.ident.load(Ordering::SeqCst) as u16;
-        let seq_cnt = self.seq_cnt.fetch_add(1, Ordering::SeqCst) as u16;
+    pub fn send(&mut self) -> PingFuture {
+        let ident = match self.ident {
+            Some(ident) => ident,
+            None => {
+                let ident = random();
+                self.ident = Some(ident);
+                ident
+            }
+        };
+
+        let seq_cnt = match self.seq_cnt {
+            Some(seq_cnt) => {
+                self.seq_cnt = Some(seq_cnt + 1);
+                seq_cnt
+            }
+            None => {
+                self.seq_cnt = Some(1);
+                0
+            }
+        };
+
+        let timeout = match self.timeout {
+            Some(timeout) => timeout,
+            None => {
+                let timeout = Duration::from_secs(DEFAULT_TIMEOUT);
+                self.timeout = Some(timeout);
+                timeout
+            }
+        };
 
         self.pinger.ping(self.hostname, ident, seq_cnt, timeout)
+    }
+
+    /// Create infinite stream of ping response times.
+    pub fn stream(self) -> PingChainStream {
+        PingChainStream::new(self)
+    }
+}
+
+/// Stream of sequential ping response times, iterates `None` if timed out.
+pub struct PingChainStream {
+    chain: PingChain,
+    future: PingFuture,
+}
+
+impl PingChainStream {
+    fn new(mut chain: PingChain) -> Self {
+        let future = chain.send();
+        Self {
+            chain: chain,
+            future: future
+        }
+    }
+}
+
+impl Stream for PingChainStream {
+    type Item = Option<f64>;
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        match self.future.poll() {
+            Ok(Async::Ready(item)) => {
+                self.future = self.chain.send();
+                Ok(Async::Ready(Some(item)))
+            },
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Err(err) => Err(err)
+        }
     }
 }
 
