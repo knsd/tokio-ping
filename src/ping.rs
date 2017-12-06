@@ -84,7 +84,7 @@ impl Drop for PingFuture {
 }
 
 pub struct PingChain {
-    ping: Ping,
+    pinger: Pinger,
     hostname: IpAddr,
     ident: AtomicUsize,
     seq_cnt: AtomicUsize,
@@ -92,9 +92,9 @@ pub struct PingChain {
 }
 
 impl PingChain {
-    fn new(ping: Ping, hostname: IpAddr) -> Self {
+    fn new(pinger: Pinger, hostname: IpAddr) -> Self {
         Self {
-            ping: ping,
+            pinger: pinger,
             hostname: hostname,
             ident: AtomicUsize::new(random()),
             seq_cnt: AtomicUsize::new(0),
@@ -122,7 +122,7 @@ impl PingChain {
         let ident = self.ident.load(Ordering::SeqCst) as u16;
         let seq_cnt = self.seq_cnt.fetch_add(1, Ordering::SeqCst) as u16;
 
-        self.ping.ping(self.hostname, ident, seq_cnt, timeout)
+        self.pinger.ping(self.hostname, ident, seq_cnt, timeout)
     }
 }
 
@@ -155,7 +155,7 @@ impl FinalizeHandle {
 }
 
 #[derive(Clone)]
-pub struct Ping {
+pub struct Pinger {
     inner: Rc<PingInner>
 }
 
@@ -209,7 +209,7 @@ impl Sockets {
     }
 }
 
-impl Ping {
+impl Pinger {
     pub fn new(handle: &Handle) -> io::Result<Self> {
         let sockets = Sockets::new(handle)?;
 

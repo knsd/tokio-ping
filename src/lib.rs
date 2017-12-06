@@ -14,4 +14,4 @@ mod ping;
 mod socket;
 
 pub use errors::{Error, ErrorKind};
-pub use ping::{Ping, PingChain, PingFuture};
+pub use ping::{Pinger, PingChain, PingFuture};
