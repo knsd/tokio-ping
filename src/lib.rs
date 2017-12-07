@@ -6,7 +6,7 @@
 //!
 //! Note, sending and receiving ICMP packets requires privileges.
 //!
-//! ```
+//! ```rust,no_run
 //! extern crate futures;
 //! extern crate tokio_core;
 //! extern crate tokio_ping;
