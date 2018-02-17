@@ -1,11 +1,10 @@
 use std::io;
 
-use std::os::unix::io::{RawFd, AsRawFd};
+use std::os::unix::io::{AsRawFd, RawFd};
 
-use mio::{Evented, Poll, Token, Ready, PollOpt};
+use mio::{Evented, Poll, PollOpt, Ready, Token};
 use mio::unix::EventedFd;
-use socket2::{Domain, Protocol, Type, SockAddr, Socket as Socket2};
-
+use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 pub struct Socket {
     socket: Socket2,
@@ -16,9 +15,7 @@ impl Socket {
         let socket = Socket2::new(domain, type_, Some(protocol))?;
         socket.set_nonblocking(true)?;
 
-        Ok(Self {
-            socket: socket
-        })
+        Ok(Self { socket: socket })
     }
 
     pub fn send_to(&self, buf: &[u8], target: &SockAddr) -> io::Result<usize> {
@@ -37,11 +34,23 @@ impl AsRawFd for Socket {
 }
 
 impl Evented for Socket {
-    fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.as_raw_fd()).register(poll, token, interest, opts)
     }
 
-    fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt) -> io::Result<()> {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.as_raw_fd()).reregister(poll, token, interest, opts)
     }
 
