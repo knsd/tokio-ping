@@ -7,10 +7,10 @@ use std::rc::{Rc, Weak};
 use std::time::Duration;
 
 use futures::future;
+use futures::{Async, Future, Poll, Stream};
 use futures::sync::oneshot;
-use futures::{Future, Stream, Poll, Async};
-use lazy_socket::raw::{Family, Protocol, Type};
 use rand::random;
+use socket2::{Domain, Protocol, Type};
 use time::precise_time_s;
 use tokio_core::reactor::{Handle, Timeout};
 
@@ -20,7 +20,6 @@ use socket::Socket;
 
 const DEFAULT_TIMEOUT: u64 = 2;
 type Token = [u8; 32];
-
 
 #[derive(Clone)]
 struct PingState {
@@ -47,18 +46,22 @@ impl PingState {
 #[must_use = "futures do nothing unless polled"]
 pub struct PingFuture {
     start_time: f64,
-    inner: Box<Future<Item=Option<f64>, Error=Error>>,
+    inner: Box<Future<Item = Option<f64>, Error = Error>>,
     pinger: Pinger,
     token: Token,
 }
 
 impl PingFuture {
-    fn new(future: Box<Future<Item=Option<f64>, Error=Error>>, pinger: Pinger, token: Token) -> Self {
+    fn new(
+        future: Box<Future<Item = Option<f64>, Error = Error>>,
+        pinger: Pinger,
+        token: Token,
+    ) -> Self {
         PingFuture {
             start_time: precise_time_s(),
             inner: future,
             pinger: pinger,
-            token: token
+            token: token,
         }
     }
 }
@@ -69,10 +72,12 @@ impl Future for PingFuture {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self.inner.poll() {
-            Ok(Async::Ready(Some(stop_time))) => Ok(Async::Ready(Some(stop_time - self.start_time))),
+            Ok(Async::Ready(Some(stop_time))) => {
+                Ok(Async::Ready(Some(stop_time - self.start_time)))
+            }
             Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
             Ok(Async::NotReady) => Ok(Async::NotReady),
-            Err(err) => Err(err)
+            Err(err) => Err(err),
         }
     }
 }
@@ -173,7 +178,7 @@ impl PingChainStream {
         let future = chain.send();
         Self {
             chain: chain,
-            future: future
+            future: future,
         }
     }
 }
@@ -187,9 +192,9 @@ impl Stream for PingChainStream {
             Ok(Async::Ready(item)) => {
                 self.future = self.chain.send();
                 Ok(Async::Ready(Some(item)))
-            },
+            }
             Ok(Async::NotReady) => Ok(Async::NotReady),
-            Err(err) => Err(err)
+            Err(err) => Err(err),
         }
     }
 }
@@ -200,20 +205,18 @@ struct Finalize {
 
 impl Finalize {
     fn new() -> Self {
-        Self {
-            inner: Rc::new(())
-        }
+        Self { inner: Rc::new(()) }
     }
 
     fn handle(&self) -> FinalizeHandle {
         FinalizeHandle {
-            inner: Rc::downgrade(&self.inner)
+            inner: Rc::downgrade(&self.inner),
         }
     }
 }
 
 struct FinalizeHandle {
-    inner: Weak<()>
+    inner: Weak<()>,
 }
 
 impl FinalizeHandle {
@@ -225,7 +228,7 @@ impl FinalizeHandle {
 /// ICMP packets sender and receiver.
 #[derive(Clone)]
 pub struct Pinger {
-    inner: Rc<PingInner>
+    inner: Rc<PingInner>,
 }
 
 struct PingInner {
@@ -238,23 +241,18 @@ struct PingInner {
 enum Sockets {
     V4(Socket),
     V6(Socket),
-    Both {
-        v4: Socket,
-        v6: Socket,
-    }
+    Both { v4: Socket, v6: Socket },
 }
 
 impl Sockets {
     fn new(handle: &Handle) -> io::Result<Self> {
-        let mb_v4socket = Socket::new(Family::IPv4, Type::RAW, Protocol::ICMPv4, handle);
-        let mb_v6socket = Socket::new(Family::IPv6, Type::RAW, Protocol::ICMPv6, handle);
+        let mb_v4socket = Socket::new(Domain::ipv4(), Type::raw(), Protocol::icmpv4(), handle);
+        let mb_v6socket = Socket::new(Domain::ipv6(), Type::raw(), Protocol::icmpv6(), handle);
         match (mb_v4socket, mb_v6socket) {
-            (Ok(v4_socket), Ok(v6_socket)) => {
-                Ok(Sockets::Both {
-                    v4: v4_socket,
-                    v6: v6_socket,
-                })
-            },
+            (Ok(v4_socket), Ok(v6_socket)) => Ok(Sockets::Both {
+                v4: v4_socket,
+                v6: v6_socket,
+            }),
             (Ok(v4_socket), Err(_)) => Ok(Sockets::V4(v4_socket)),
             (Err(_), Ok(v6_socket)) => Ok(Sockets::V6(v6_socket)),
             (Err(err), Err(_)) => Err(err),
@@ -262,24 +260,23 @@ impl Sockets {
     }
 
     fn v4(&self) -> Option<&Socket> {
-        match self {
-            &Sockets::V4(ref socket) => Some(socket),
-            &Sockets::Both { ref v4, .. } => Some(v4),
-            &Sockets::V6(_) => None
+        match *self {
+            Sockets::V4(ref socket) => Some(socket),
+            Sockets::Both { ref v4, .. } => Some(v4),
+            Sockets::V6(_) => None,
         }
     }
 
     fn v6(&self) -> Option<&Socket> {
-        match self {
-            &Sockets::V4(_) => None,
-            &Sockets::Both { ref v6, .. } => Some(v6),
-            &Sockets::V6(ref socket) => Some(socket)
+        match *self {
+            Sockets::V4(_) => None,
+            Sockets::Both { ref v6, .. } => Some(v6),
+            Sockets::V6(ref socket) => Some(socket),
         }
     }
 }
 
 impl Pinger {
-
     /// Create new `Pinger` instance, will fail if unable to create both IPv4 and IPv6 sockets.
     pub fn new(handle: &Handle) -> io::Result<Self> {
         let sockets = Sockets::new(handle)?;
@@ -288,16 +285,14 @@ impl Pinger {
         let finalize = Finalize::new();
 
         if let Some(v4_socket) = sockets.v4() {
-            let receiver = Receiver::<IcmpV4Message>::new(v4_socket.clone(),
-                                                          state.clone(),
-                                                          finalize.handle());
+            let receiver =
+                Receiver::<IcmpV4Message>::new(v4_socket.clone(), state.clone(), finalize.handle());
             handle.spawn(receiver);
         }
 
         if let Some(v6_socket) = sockets.v6() {
-            let receiver = Receiver::<IcmpV6Message>::new(v6_socket.clone(),
-                                                          state.clone(),
-                                                          finalize.handle());
+            let receiver =
+                Receiver::<IcmpV6Message>::new(v6_socket.clone(), state.clone(), finalize.handle());
             handle.spawn(receiver);
         }
 
@@ -309,7 +304,7 @@ impl Pinger {
         };
 
         Ok(Self {
-            inner: Rc::new(inner)
+            inner: Rc::new(inner),
         })
     }
 
@@ -319,46 +314,62 @@ impl Pinger {
     }
 
     /// Send ICMP request and wait for response.
-    pub fn ping(&self, hostname: IpAddr, ident: u16, seq_cnt: u16, timeout: Duration) -> PingFuture {
+    pub fn ping(
+        &self,
+        hostname: IpAddr,
+        ident: u16,
+        seq_cnt: u16,
+        timeout: Duration,
+    ) -> PingFuture {
         let (sender, receiver) = oneshot::channel();
 
         let timeout_future = future::result(Timeout::new(timeout, &self.inner.handle))
-            .flatten().map_err(From::from).map(|()| None);
+            .flatten()
+            .map_err(From::from)
+            .map(|()| None);
 
-        let send_future = receiver.and_then(|time| {
-            Ok(Some(time))
-        }).map_err(|_| ErrorKind::PingInternalError.into());
+        let send_future = receiver
+            .and_then(|time| Ok(Some(time)))
+            .map_err(|_| ErrorKind::PingInternalError.into());
 
-        let future = timeout_future.select(send_future)
+        let future = timeout_future
+            .select(send_future)
             .map(|(item, _next)| item)
             .map_err(|(item, _next)| item);
 
         let token = random();
         self.inner.state.insert(token, sender);
 
-        let dest = SocketAddr::new(hostname.into(), 1);
+        let dest = SocketAddr::new(hostname, 0);
 
         let (mb_socket, packet) = {
             if dest.is_ipv4() {
-                (self.inner.sockets.v4().cloned(), IcmpV4Message::echo_request(ident, seq_cnt, &token).encode())
-
+                (
+                    self.inner.sockets.v4().cloned(),
+                    IcmpV4Message::echo_request(ident, seq_cnt, &token).encode(),
+                )
             } else {
-                (self.inner.sockets.v6().cloned(), IcmpV6Message::echo_request(ident, seq_cnt, &token).encode())
+                (
+                    self.inner.sockets.v6().cloned(),
+                    IcmpV6Message::echo_request(ident, seq_cnt, &token).encode(),
+                )
             }
         };
 
         let socket = match mb_socket {
             Some(socket) => socket,
             None => {
-                return PingFuture::new(Box::new(
-                    future::err(ErrorKind::InvalidProtocol.into())
-                ), self.clone(), token)
+                return PingFuture::new(
+                    Box::new(future::err(ErrorKind::InvalidProtocol.into())),
+                    self.clone(),
+                    token,
+                )
             }
         };
 
-        self.inner.handle.spawn_fn(move || {
-            socket.send_to(packet, &dest).then(|_| Ok(()))
-        });
+        self.inner
+            .handle
+            .spawn_fn(move || socket.send_to(packet, &dest).then(|_| Ok(())));
 
         PingFuture::new(Box::new(future), self.clone(), token)
     }
@@ -373,18 +384,18 @@ struct Receiver<Message> {
 }
 
 trait ParseReply {
-    fn reply_payload<'a>(data: &'a [u8]) -> Option<&'a [u8]>;
+    fn reply_payload(data: &[u8]) -> Option<&[u8]>;
 }
 
 impl<'b> ParseReply for IcmpV4Message<'b> {
-    fn reply_payload<'a>(data: &'a [u8]) -> Option<&'a [u8]> {
+    fn reply_payload(data: &[u8]) -> Option<&[u8]> {
         if let Ok(ipv4_packet) = IpV4Packet::decode(data) {
             if ipv4_packet.protocol != IpV4Protocol::Icmp {
-                return None
+                return None;
             }
 
             if let Ok(IcmpV4Message::EchoReply(reply)) = IcmpV4Message::decode(ipv4_packet.data) {
-                return Some(reply.payload)
+                return Some(reply.payload);
             }
         }
         None
@@ -392,9 +403,9 @@ impl<'b> ParseReply for IcmpV4Message<'b> {
 }
 
 impl<'b> ParseReply for IcmpV6Message<'b> {
-    fn reply_payload<'a>(data: &'a [u8]) -> Option<&'a [u8]> {
+    fn reply_payload(data: &[u8]) -> Option<&[u8]> {
         if let Ok(IcmpV6Message::EchoReply(reply)) = IcmpV6Message::decode(data) {
-            return Some(reply.payload)
+            return Some(reply.payload);
         }
         None
     }
@@ -402,16 +413,13 @@ impl<'b> ParseReply for IcmpV6Message<'b> {
 
 impl<Proto> Receiver<Proto> {
     fn new(socket: Socket, state: PingState, finalize: FinalizeHandle) -> Self {
-
-        let receiver = Self {
+        Self {
             socket: socket,
             finalize: finalize,
             state: state,
             buffer: [0; 2048],
             _phantom: ::std::marker::PhantomData,
-        };
-
-        receiver
+        }
     }
 }
 
@@ -421,7 +429,7 @@ impl<Message: ParseReply> Future for Receiver<Message> {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         if !self.finalize.is_alive() {
-            return Ok(Async::Ready(()))
+            return Ok(Async::Ready(()));
         }
 
         match self.socket.recv(&mut self.buffer) {
@@ -433,7 +441,7 @@ impl<Message: ParseReply> Future for Receiver<Message> {
                     }
                 }
                 self.poll()
-            },
+            }
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Err(_) => Err(()),
         }

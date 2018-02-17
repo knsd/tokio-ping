@@ -1,6 +1,6 @@
 //! tokio-ping is an asynchronous ICMP pinging library.
 //!
-//! The repository is located at https://github.com/knsd/tokio-ping/.
+//! The repository is located at <https://github.com/knsd/tokio-ping/>.
 //!
 //! # Usage example
 //!
@@ -35,10 +35,10 @@
 
 #[macro_use] extern crate error_chain;
 extern crate futures;
-extern crate lazy_socket;
 extern crate libc;
 extern crate mio;
 extern crate rand;
+extern crate socket2;
 extern crate time;
 #[macro_use] extern crate tokio_core;
 
