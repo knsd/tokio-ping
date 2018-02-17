@@ -45,7 +45,7 @@ impl<Data: IcmpV4HeaderData> IcmpV4Header<Data> {
         if data.len() == ICMPV4_HEADER_SIZE {
             let kind = data[0];
             let code = data[1];
-            let checksum = ((data[2] as u16) << 8) + data[3] as u16;
+            let checksum = (u16::from(data[2]) << 8) + u16::from(data[3]);
             let data = Data::decode(&data[4..])?;
             Ok(Self {
                 kind: kind,
@@ -84,8 +84,8 @@ impl IcmpV4HeaderData for IdentSeqData {
 
     fn decode(data: &[u8]) -> errors::Result<Self> {
         if data.len() == ICMPV4_HEADER_DATA_SIZE {
-            let ident = ((data[0] as u16) << 8) + data[1] as u16;
-            let seq_cnt = ((data[2] as u16) << 8) + data[3] as u16;
+            let ident = (u16::from(data[0]) << 8) + u16::from(data[1]);
+            let seq_cnt = (u16::from(data[2]) << 8) + u16::from(data[3]);
 
             Ok(Self {
                 ident: ident,
@@ -128,15 +128,15 @@ impl<'a, Data: IcmpV4HeaderData> RawIcmpV4Message<'a, Data> {
     fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(ICMPV4_HEADER_SIZE + self.payload.len());
         buf.extend_from_slice(&self.header.encode());
-        buf.extend_from_slice(&self.payload);
+        buf.extend_from_slice(self.payload);
 
         let mut sum = 0u32;
         for word in buf.chunks(2) {
-            let mut part = (word[0] as u16) << 8;
+            let mut part = u16::from(word[0]) << 8;
             if word.len() > 1 {
-                part += word[1] as u16;
+                part += u16::from(word[1]);
             }
-            sum = sum.wrapping_add(part as u32);
+            sum = sum.wrapping_add(u32::from(part));
         }
 
         while (sum >> 16) > 0 {
