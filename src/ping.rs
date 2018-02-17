@@ -7,10 +7,10 @@ use std::rc::{Rc, Weak};
 use std::time::Duration;
 
 use futures::future;
-use futures::sync::oneshot;
 use futures::{Future, Stream, Poll, Async};
-use lazy_socket::raw::{Family, Protocol, Type};
+use futures::sync::oneshot;
 use rand::random;
+use socket2::{Domain, Protocol, Type};
 use time::precise_time_s;
 use tokio_core::reactor::{Handle, Timeout};
 
@@ -246,8 +246,8 @@ enum Sockets {
 
 impl Sockets {
     fn new(handle: &Handle) -> io::Result<Self> {
-        let mb_v4socket = Socket::new(Family::IPv4, Type::RAW, Protocol::ICMPv4, handle);
-        let mb_v6socket = Socket::new(Family::IPv6, Type::RAW, Protocol::ICMPv6, handle);
+        let mb_v4socket = Socket::new(Domain::ipv4(), Type::raw(), Protocol::icmpv4(), handle);
+        let mb_v6socket = Socket::new(Domain::ipv6(), Type::raw(), Protocol::icmpv6(), handle);
         match (mb_v4socket, mb_v6socket) {
             (Ok(v4_socket), Ok(v6_socket)) => {
                 Ok(Sockets::Both {

@@ -1,34 +1,32 @@
 use std::io;
 
-use std::net::SocketAddr;
 use std::os::unix::io::{RawFd, AsRawFd};
 
-use lazy_socket::raw::{Socket as LazySocket};
-use libc::c_int;
 use mio::{Evented, Poll, Token, Ready, PollOpt};
 use mio::unix::EventedFd;
+use socket2::{Domain, Protocol, Type, SockAddr, Socket as Socket2};
 
 
 pub struct Socket {
-    socket: LazySocket,
+    socket: Socket2,
 }
 
 impl Socket {
-    pub fn new(family: c_int, type_: c_int, protocol: c_int) -> io::Result<Self> {
-        let socket = LazySocket::new(family, type_, protocol)?;
-        socket.set_blocking(false)?;
+    pub fn new(domain: Domain, type_: Type, protocol: Protocol) -> io::Result<Self> {
+        let socket = Socket2::new(domain, type_, Some(protocol))?;
+        socket.set_nonblocking(true)?;
 
         Ok(Self {
             socket: socket
         })
     }
 
-    pub fn send_to(&self, buf: &[u8], target: &SocketAddr) -> io::Result<usize> {
-        self.socket.send_to(buf, target, 0)
+    pub fn send_to(&self, buf: &[u8], target: &SockAddr) -> io::Result<usize> {
+        self.socket.send_to(buf, target)
     }
 
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        self.socket.recv(buf, 0)
+        self.socket.recv(buf)
     }
 }
 

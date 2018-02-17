@@ -1,10 +1,10 @@
 use std::io;
 use std::rc::Rc;
-use std::net::SocketAddr;
 
 use futures;
-use libc::c_int;
+use std::net::SocketAddr;
 use tokio_core::reactor::{Handle, PollEvented};
+use socket2::{Domain, Protocol, Type, SockAddr};
 
 use socket::mio;
 
@@ -14,8 +14,8 @@ pub struct Socket {
 }
 
 impl Socket {
-    pub fn new (family: c_int, type_: c_int, protocol: c_int, handle: &Handle) -> io::Result<Self> {
-        let socket = mio::Socket::new(family, type_, protocol)?;
+    pub fn new (domain: Domain, type_: Type, protocol: Protocol, handle: &Handle) -> io::Result<Self> {
+        let socket = mio::Socket::new(domain, type_, protocol)?;
         let socket = PollEvented::new(socket, handle)?;
         Ok(Self {
             socket: Rc::new(socket),
@@ -26,7 +26,7 @@ impl Socket {
         Send {
             state: SendState::Writing {
                 socket: self.socket.clone(),
-                addr: target.clone(),
+                addr: target.clone().into(),
                 buf: buf,
             },
         }
@@ -45,12 +45,12 @@ enum SendState<T> {
     Writing {
         socket: Rc<PollEvented<mio::Socket>>,
         buf: T,
-        addr: SocketAddr,
+        addr: SockAddr,
     },
     Empty,
 }
 
-fn send_to(socket: Rc<PollEvented<mio::Socket>>, buf: &[u8], target: &SocketAddr) -> io::Result<usize> {
+fn send_to(socket: Rc<PollEvented<mio::Socket>>, buf: &[u8], target: &SockAddr) -> io::Result<usize> {
     if let futures::Async::NotReady = socket.poll_write() {
         return Err(io::ErrorKind::WouldBlock.into())
     }
