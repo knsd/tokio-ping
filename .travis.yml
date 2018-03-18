@@ -6,3 +6,6 @@ rust:
 os:
   - linux
   - osx
+notifications:
+    webhooks:
+        - http://heimdallr.thesharp.org/travis
