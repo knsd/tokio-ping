@@ -340,7 +340,7 @@ impl Pinger {
         let token = random();
         self.inner.state.insert(token, sender);
 
-        let dest = SocketAddr::new(hostname, 1);
+        let dest = SocketAddr::new(hostname, 0);
 
         let (mb_socket, packet) = {
             if dest.is_ipv4() {
