@@ -1,5 +1,11 @@
 Here you can see the full list of changes between each tokio-ping release.
 
+### Version 0.1.2 (2018-03-18)
+
+#### Fixes
+* Still EINVAL on ICMPv6 ([#5](https://github.com/knsd/tokio-ping/pull/5))
+* Panic in debug builds ([#4](https://github.com/knsd/tokio-ping/issues/4))
+
 ### Version 0.1.1 (2018-02-17)
 
 #### Fixes
