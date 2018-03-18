@@ -140,7 +140,7 @@ impl PingChain {
 
         let seq_cnt = match self.seq_cnt {
             Some(seq_cnt) => {
-                self.seq_cnt = Some(seq_cnt + 1);
+                self.seq_cnt = Some(seq_cnt.wrapping_add(1));
                 seq_cnt
             }
             None => {
