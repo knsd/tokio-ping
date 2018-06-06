@@ -1,69 +1,68 @@
 use std::io;
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
-use std::rc::{Rc, Weak};
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Instant, Duration};
 
-use futures::future;
 use futures::{Async, Future, Poll, Stream};
 use futures::sync::oneshot;
 use rand::random;
+use parking_lot::Mutex;
 use socket2::{Domain, Protocol, Type};
 use time::precise_time_s;
-use tokio_core::reactor::{Handle, Timeout};
+
+use tokio_executor::spawn;
+use tokio_reactor::Handle;
+use tokio_timer::Delay;
 
 use errors::{Error, ErrorKind};
 use packet::{IcmpV4Message, IcmpV6Message, IpV4Packet, IpV4Protocol};
-use socket::Socket;
+use socket::{Socket, Send};
 
 const DEFAULT_TIMEOUT: u64 = 2;
 type Token = [u8; 32];
 
 #[derive(Clone)]
 struct PingState {
-    inner: Rc<RefCell<HashMap<Token, oneshot::Sender<f64>>>>,
+    inner: Arc<Mutex<HashMap<Token, oneshot::Sender<f64>>>>,
 }
 
 impl PingState {
     fn new() -> Self {
         Self {
-            inner: Rc::new(RefCell::new(HashMap::new())),
+            inner: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     fn insert(&self, key: Token, value: oneshot::Sender<f64>) {
-        self.inner.borrow_mut().insert(key, value);
+        self.inner.lock().insert(key, value);
     }
 
     fn remove(&self, key: &[u8]) -> Option<oneshot::Sender<f64>> {
-        self.inner.borrow_mut().remove(key)
+        self.inner.lock().remove(key)
     }
 }
 
 /// Represent a future that resolves into ping response time, resolves into `None` if timed out.
 #[must_use = "futures do nothing unless polled"]
 pub struct PingFuture {
-    start_time: f64,
-    inner: Box<Future<Item = Option<f64>, Error = Error>>,
-    pinger: Pinger,
-    token: Token,
+    inner: PingFutureKind
 }
 
-impl PingFuture {
-    fn new(
-        future: Box<Future<Item = Option<f64>, Error = Error>>,
-        pinger: Pinger,
-        token: Token,
-    ) -> Self {
-        PingFuture {
-            start_time: precise_time_s(),
-            inner: future,
-            pinger: pinger,
-            token: token,
-        }
-    }
+enum PingFutureKind {
+    Normal(NormalPingFutureKind),
+    InvalidProto,
+    Polled,
+}
+
+struct NormalPingFutureKind {
+    start_time: f64,
+    state: PingState,
+    token: Token,
+    delay: Delay,
+    send: Option<Send<Vec<u8>>>,
+    receiver: oneshot::Receiver<f64>,
 }
 
 impl Future for PingFuture {
@@ -71,20 +70,59 @@ impl Future for PingFuture {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.inner.poll() {
-            Ok(Async::Ready(Some(stop_time))) => {
-                Ok(Async::Ready(Some(stop_time - self.start_time)))
+        let mut kind = PingFutureKind::Polled;
+        ::std::mem::swap(&mut self.inner, &mut kind);
+
+        match kind {
+            PingFutureKind::Normal(ref mut normal) => {
+                let mut swap_send = false;
+                if let Some(ref mut send) = normal.send {
+                    match send.poll() {
+                        Ok(Async::NotReady) => (),
+                        Ok(Async::Ready(_)) => swap_send = true,
+                        Err(_) => return Err(ErrorKind::PingInternalError.into()),
+                    }
+                }
+
+                if swap_send {
+                    normal.send = None;
+                }
+
+                match normal.receiver.poll() {
+                    Ok(Async::NotReady) => (),
+                    Ok(Async::Ready(stop_time)) => {
+                        return Ok(Async::Ready(Some(stop_time - normal.start_time)))
+                    },
+                    Err(_) => return Err(ErrorKind::PingInternalError.into()),
+                }
+
+                match normal.delay.poll() {
+                    Ok(Async::NotReady) => (),
+                    Ok(Async::Ready(_)) => return Ok(Async::Ready(None)),
+                    Err(_) => return Err(ErrorKind::PingInternalError.into()),
+                }
             }
-            Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Err(err) => Err(err),
+            PingFutureKind::InvalidProto => {
+                return Err(ErrorKind::InvalidProtocol.into())
+            }
+            PingFutureKind::Polled => {
+                panic!("poll a PingFuture after it's done")
+            }
         }
+
+        ::std::mem::swap(&mut self.inner, &mut kind);
+        Ok(Async::NotReady)
     }
 }
 
 impl Drop for PingFuture {
     fn drop(&mut self) {
-        self.pinger.inner.state.remove(&self.token);
+        match self.inner {
+            PingFutureKind::Normal(ref normal) => {
+                normal.state.remove(&normal.token);
+            }
+            PingFutureKind::InvalidProto | PingFutureKind::Polled => (),
+        }
     }
 }
 
@@ -199,43 +237,17 @@ impl Stream for PingChainStream {
     }
 }
 
-struct Finalize {
-    inner: Rc<()>,
-}
-
-impl Finalize {
-    fn new() -> Self {
-        Self { inner: Rc::new(()) }
-    }
-
-    fn handle(&self) -> FinalizeHandle {
-        FinalizeHandle {
-            inner: Rc::downgrade(&self.inner),
-        }
-    }
-}
-
-struct FinalizeHandle {
-    inner: Weak<()>,
-}
-
-impl FinalizeHandle {
-    fn is_alive(&self) -> bool {
-        self.inner.upgrade().is_some()
-    }
-}
-
 /// ICMP packets sender and receiver.
 #[derive(Clone)]
 pub struct Pinger {
-    inner: Rc<PingInner>,
+    inner: Arc<PingInner>,
 }
 
 struct PingInner {
     sockets: Sockets,
     state: PingState,
-    handle: Handle,
-    _finalize: Finalize,
+    _v4_finalize: Option<oneshot::Sender<()>>,
+    _v6_finalize: Option<oneshot::Sender<()>>,
 }
 
 enum Sockets {
@@ -278,33 +290,47 @@ impl Sockets {
 
 impl Pinger {
     /// Create new `Pinger` instance, will fail if unable to create both IPv4 and IPv6 sockets.
-    pub fn new(handle: &Handle) -> io::Result<Self> {
+    pub fn new() -> impl Future<Item=Self, Error=Error> {
+        ::futures::future::lazy(||
+            Self::with_handle(&Handle::default()).map_err(From::from)
+        )
+
+    }
+
+    fn with_handle(handle: &Handle) -> io::Result<Self> {
         let sockets = Sockets::new(handle)?;
 
         let state = PingState::new();
-        let finalize = Finalize::new();
 
-        if let Some(v4_socket) = sockets.v4() {
+        let v4_finalize = if let Some(v4_socket) = sockets.v4() {
+            let (s, r) = oneshot::channel();
             let receiver =
-                Receiver::<IcmpV4Message>::new(v4_socket.clone(), state.clone(), finalize.handle());
-            handle.spawn(receiver);
-        }
+                Receiver::<IcmpV4Message>::new(v4_socket.clone(), state.clone());
+            spawn(receiver.select(r.map_err(|_| ())).then(|_| Ok(())));
+            Some(s)
+        } else {
+            None
+        };
 
-        if let Some(v6_socket) = sockets.v6() {
+        let v6_finalize = if let Some(v6_socket) = sockets.v6() {
+            let (s, r) = oneshot::channel();
             let receiver =
-                Receiver::<IcmpV6Message>::new(v6_socket.clone(), state.clone(), finalize.handle());
-            handle.spawn(receiver);
-        }
+                Receiver::<IcmpV6Message>::new(v6_socket.clone(), state.clone());
+            spawn(receiver.select(r.map_err(|_| ())).then(|_| Ok(())));
+            Some(s)
+        } else {
+            None
+        };
 
         let inner = PingInner {
             sockets: sockets,
             state: state,
-            handle: handle.clone(),
-            _finalize: finalize,
+            _v4_finalize: v4_finalize,
+            _v6_finalize: v6_finalize,
         };
 
         Ok(Self {
-            inner: Rc::new(inner),
+            inner: Arc::new(inner),
         })
     }
 
@@ -323,19 +349,7 @@ impl Pinger {
     ) -> PingFuture {
         let (sender, receiver) = oneshot::channel();
 
-        let timeout_future = future::result(Timeout::new(timeout, &self.inner.handle))
-            .flatten()
-            .map_err(From::from)
-            .map(|()| None);
-
-        let send_future = receiver
-            .and_then(|time| Ok(Some(time)))
-            .map_err(|_| ErrorKind::PingInternalError.into());
-
-        let future = timeout_future
-            .select(send_future)
-            .map(|(item, _next)| item)
-            .map_err(|(item, _next)| item);
+        let deadline = Instant::now() + timeout;
 
         let token = random();
         self.inner.state.insert(token, sender);
@@ -359,25 +373,29 @@ impl Pinger {
         let socket = match mb_socket {
             Some(socket) => socket,
             None => {
-                return PingFuture::new(
-                    Box::new(future::err(ErrorKind::InvalidProtocol.into())),
-                    self.clone(),
-                    token,
-                )
+                return PingFuture {
+                    inner: PingFutureKind::InvalidProto
+                }
             }
         };
 
-        self.inner
-            .handle
-            .spawn_fn(move || socket.send_to(packet, &dest).then(|_| Ok(())));
+        let send_future =socket.send_to(packet, &dest);
 
-        PingFuture::new(Box::new(future), self.clone(), token)
+        PingFuture {
+            inner: PingFutureKind::Normal(NormalPingFutureKind {
+                start_time: precise_time_s(),
+                state: self.inner.state.clone(),
+                token: token,
+                delay: Delay::new(deadline),
+                send: Some(send_future),
+                receiver: receiver,
+            })
+        }
     }
 }
 
 struct Receiver<Message> {
     socket: Socket,
-    finalize: FinalizeHandle,
     state: PingState,
     buffer: [u8; 2048],
     _phantom: ::std::marker::PhantomData<Message>,
@@ -412,10 +430,9 @@ impl<'b> ParseReply for IcmpV6Message<'b> {
 }
 
 impl<Proto> Receiver<Proto> {
-    fn new(socket: Socket, state: PingState, finalize: FinalizeHandle) -> Self {
+    fn new(socket: Socket, state: PingState) -> Self {
         Self {
             socket: socket,
-            finalize: finalize,
             state: state,
             buffer: [0; 2048],
             _phantom: ::std::marker::PhantomData,
@@ -428,10 +445,6 @@ impl<Message: ParseReply> Future for Receiver<Message> {
     type Error = ();
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        if !self.finalize.is_alive() {
-            return Ok(Async::Ready(()));
-        }
-
         match self.socket.recv(&mut self.buffer) {
             Ok(Async::Ready(bytes)) => {
                 if let Some(payload) = Message::reply_payload(&self.buffer[..bytes]) {

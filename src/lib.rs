@@ -8,39 +8,44 @@
 //!
 //! ```rust,no_run
 //! extern crate futures;
-//! extern crate tokio_core;
+//! extern crate tokio;
+//!
 //! extern crate tokio_ping;
 //!
-//! use futures::Stream;
+//! use futures::{Future, Stream};
 //!
 //! fn main() {
 //!     let addr = std::env::args().nth(1).unwrap().parse().unwrap();
 //!
-//!     let mut reactor = tokio_core::reactor::Core::new().unwrap();
-//!     let pinger = tokio_ping::Pinger::new(&reactor.handle()).unwrap();
-//!     let stream = pinger.chain(addr).stream();
-//!
-//!     let future = stream.take(3).for_each(|mb_time| {
-//!         match mb_time {
-//!             Some(time) => println!("time={}", time),
-//!             None => println!("timeout"),
-//!         }
-//!         Ok(())
+//!     let pinger = tokio_ping::Pinger::new();
+//!     let stream = pinger.and_then(move |pinger| Ok(pinger.chain(addr).stream()));
+//!     let future = stream.and_then(|stream| {
+//!         stream.take(3).for_each(|mb_time| {
+//!             match mb_time {
+//!                 Some(time) => println!("time={}", time),
+//!                 None => println!("timeout"),
+//!             }
+//!             Ok(())
+//!         })
 //!     });
 //!
-//!     reactor.run(future).unwrap_or_default();
+//!     tokio::run(future.map_err(|err| {
+//!         eprintln!("Error: {}", err)
+//!     }))
 //! }
-//!
 //! ```
 
 #[macro_use] extern crate error_chain;
-extern crate futures;
+#[macro_use] extern crate futures;
 extern crate libc;
 extern crate mio;
 extern crate rand;
 extern crate socket2;
 extern crate time;
-#[macro_use] extern crate tokio_core;
+extern crate parking_lot;
+extern crate tokio_executor;
+extern crate tokio_reactor;
+extern crate tokio_timer;
 
 mod errors;
 mod packet;

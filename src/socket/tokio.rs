@@ -1,16 +1,17 @@
 use std::io;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use futures;
 use std::net::SocketAddr;
-use tokio_core::reactor::{Handle, PollEvented};
+use mio::Ready;
+use tokio_reactor::{Handle, PollEvented};
 use socket2::{Domain, Protocol, SockAddr, Type};
 
 use socket::mio;
 
 #[derive(Clone)]
 pub struct Socket {
-    socket: Rc<PollEvented<mio::Socket>>,
+    socket: Arc<PollEvented<mio::Socket>>,
 }
 
 impl Socket {
@@ -21,9 +22,9 @@ impl Socket {
         handle: &Handle,
     ) -> io::Result<Self> {
         let socket = mio::Socket::new(domain, type_, protocol)?;
-        let socket = PollEvented::new(socket, handle)?;
+        let socket = PollEvented::new_with_handle(socket, handle)?;
         Ok(Self {
-            socket: Rc::new(socket),
+            socket: Arc::new(socket),
         })
     }
 
@@ -41,7 +42,16 @@ impl Socket {
     }
 
     pub fn recv(&self, buffer: &mut [u8]) -> futures::Poll<usize, io::Error> {
-        Ok(futures::Async::Ready(try_nb!(recv(&self.socket, buffer))))
+        try_ready!(self.socket.poll_read_ready(Ready::readable()));
+
+        match self.socket.get_ref().recv(buffer) {
+            Ok(n) => Ok(n.into()),
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                self.socket.clear_read_ready(Ready::readable())?;
+                Ok(futures::Async::NotReady)
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -51,7 +61,7 @@ pub struct Send<T> {
 
 enum SendState<T> {
     Writing {
-        socket: Rc<PollEvented<mio::Socket>>,
+        socket: Arc<PollEvented<mio::Socket>>,
         buf: T,
         addr: SockAddr,
     },
@@ -59,35 +69,21 @@ enum SendState<T> {
 }
 
 fn send_to(
-    socket: &Rc<PollEvented<mio::Socket>>,
+    socket: &Arc<PollEvented<mio::Socket>>,
     buf: &[u8],
     target: &SockAddr,
-) -> io::Result<usize> {
-    if let futures::Async::NotReady = socket.poll_write() {
-        return Err(io::ErrorKind::WouldBlock.into());
-    }
-    match socket.get_ref().send_to(buf, target) {
-        Ok(n) => Ok(n),
-        Err(e) => {
-            if e.kind() == io::ErrorKind::WouldBlock {
-                socket.need_write();
-            }
-            Err(e)
-        }
-    }
-}
+) -> futures::Poll<usize, io::Error> {
+    try_ready!(socket.poll_write_ready());
 
-fn recv(socket: &Rc<PollEvented<mio::Socket>>, buf: &mut [u8]) -> io::Result<usize> {
-    if let futures::Async::NotReady = socket.poll_read() {
-        return Err(io::ErrorKind::WouldBlock.into());
-    }
-    match socket.get_ref().recv(buf) {
-        Ok(n) => Ok(n),
+    match socket.get_ref().send_to(buf, target) {
+        Ok(n) => Ok(n.into()),
         Err(e) => {
             if e.kind() == io::ErrorKind::WouldBlock {
-                socket.need_read();
+                socket.clear_write_ready()?;
+                Ok(futures::Async::NotReady)
+            } else {
+                Err(e)
             }
-            Err(e)
         }
     }
 }
@@ -106,7 +102,7 @@ where
                 ref buf,
                 ref addr,
             } => {
-                let n = try_nb!(send_to(socket, buf.as_ref(), addr));
+                let n = try_ready!(send_to(socket, buf.as_ref(), addr));
                 if n != buf.as_ref().len() {
                     return Err(io::Error::new(
                         io::ErrorKind::Other,
