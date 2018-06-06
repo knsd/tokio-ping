@@ -16,7 +16,7 @@ use tokio_executor::spawn;
 use tokio_reactor::Handle;
 use tokio_timer::Delay;
 
-use errors::Error;
+use errors::{Error, ErrorKind};
 use packet::{IcmpV4Message, IcmpV6Message, IpV4Packet, IpV4Protocol};
 use socket::{Socket, Send};
 
@@ -52,7 +52,7 @@ pub struct PingFuture {
 
 enum PingFutureKind {
     Normal(NormalPingFutureKind),
-    InvalidProto,
+    InvalidProtocol,
     Polled,
 }
 
@@ -80,7 +80,7 @@ impl Future for PingFuture {
                     match send.poll() {
                         Ok(Async::NotReady) => (),
                         Ok(Async::Ready(_)) => swap_send = true,
-                        Err(_) => return Err(Error::InternalError),
+                        Err(_) => return Err(ErrorKind::InternalError.into()),
                     }
                 }
 
@@ -93,17 +93,17 @@ impl Future for PingFuture {
                     Ok(Async::Ready(stop_time)) => {
                         return Ok(Async::Ready(Some(stop_time - normal.start_time)))
                     },
-                    Err(_) => return Err(Error::InternalError),
+                    Err(_) => return Err(ErrorKind::InternalError.into()),
                 }
 
                 match normal.delay.poll() {
                     Ok(Async::NotReady) => (),
                     Ok(Async::Ready(_)) => return Ok(Async::Ready(None)),
-                    Err(_) => return Err(Error::InternalError),
+                    Err(_) => return Err(ErrorKind::InternalError.into()),
                 }
             }
-            PingFutureKind::InvalidProto => {
-                return Err(Error::InvalidProtocol)
+            PingFutureKind::InvalidProtocol => {
+                return Err(ErrorKind::InvalidProtocol.into())
             }
             PingFutureKind::Polled => {
                 panic!("poll a PingFuture after it's done")
@@ -121,7 +121,7 @@ impl Drop for PingFuture {
             PingFutureKind::Normal(ref normal) => {
                 normal.state.remove(&normal.token);
             }
-            PingFutureKind::InvalidProto | PingFutureKind::Polled => (),
+            PingFutureKind::InvalidProtocol | PingFutureKind::Polled => (),
         }
     }
 }
@@ -374,7 +374,7 @@ impl Pinger {
             Some(socket) => socket,
             None => {
                 return PingFuture {
-                    inner: PingFutureKind::InvalidProto
+                    inner: PingFutureKind::InvalidProtocol
                 }
             }
         };
