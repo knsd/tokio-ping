@@ -10,7 +10,7 @@ keywords = ["tokio", "icmp", "ping"]
 categories = ["network-programming", "asynchronous"]
 
 [dependencies]
-error-chain = "0.11"
+failure = "0.1.1"
 futures = "0.1"
 libc = "0.2"
 mio = "0.6"

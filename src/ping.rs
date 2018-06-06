@@ -16,7 +16,7 @@ use tokio_executor::spawn;
 use tokio_reactor::Handle;
 use tokio_timer::Delay;
 
-use errors::{Error, ErrorKind};
+use errors::Error;
 use packet::{IcmpV4Message, IcmpV6Message, IpV4Packet, IpV4Protocol};
 use socket::{Socket, Send};
 
@@ -80,7 +80,7 @@ impl Future for PingFuture {
                     match send.poll() {
                         Ok(Async::NotReady) => (),
                         Ok(Async::Ready(_)) => swap_send = true,
-                        Err(_) => return Err(ErrorKind::PingInternalError.into()),
+                        Err(_) => return Err(Error::InternalError),
                     }
                 }
 
@@ -93,17 +93,17 @@ impl Future for PingFuture {
                     Ok(Async::Ready(stop_time)) => {
                         return Ok(Async::Ready(Some(stop_time - normal.start_time)))
                     },
-                    Err(_) => return Err(ErrorKind::PingInternalError.into()),
+                    Err(_) => return Err(Error::InternalError),
                 }
 
                 match normal.delay.poll() {
                     Ok(Async::NotReady) => (),
                     Ok(Async::Ready(_)) => return Ok(Async::Ready(None)),
-                    Err(_) => return Err(ErrorKind::PingInternalError.into()),
+                    Err(_) => return Err(Error::InternalError),
                 }
             }
             PingFutureKind::InvalidProto => {
-                return Err(ErrorKind::InvalidProtocol.into())
+                return Err(Error::InvalidProtocol)
             }
             PingFutureKind::Polled => {
                 panic!("poll a PingFuture after it's done")

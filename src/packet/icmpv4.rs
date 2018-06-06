@@ -1,11 +1,11 @@
-mod errors {
-    error_chain! {
-        errors {
-            EmptyData
-            InvalidHeaderDataSize
-            InvalidHeaderSize
-        }
-    }
+#[derive(Debug, Fail)]
+pub enum Error {
+    #[fail(display = "empty data")]
+    EmptyData,
+    #[fail(display = "invalid header data size")]
+    InvalidHeaderDataSize,
+    #[fail(display = "invalid header size")]
+    InvalidHeaderSize,
 }
 
 const ICMPV4_HEADER_SIZE: usize = 8;
@@ -41,7 +41,7 @@ impl<Data: IcmpV4HeaderData> IcmpV4Header<Data> {
         buf
     }
 
-    fn decode(data: &[u8]) -> errors::Result<Self> {
+    fn decode(data: &[u8]) -> Result<Self, Error> {
         if data.len() == ICMPV4_HEADER_SIZE {
             let kind = data[0];
             let code = data[1];
@@ -54,14 +54,14 @@ impl<Data: IcmpV4HeaderData> IcmpV4Header<Data> {
                 data: data,
             })
         } else {
-            Err(errors::ErrorKind::InvalidHeaderSize.into())
+            Err(Error::InvalidHeaderSize)
         }
     }
 }
 
 pub trait IcmpV4HeaderData: Sized {
     fn encode(&self) -> [u8; ICMPV4_HEADER_DATA_SIZE];
-    fn decode(data: &[u8]) -> errors::Result<Self>;
+    fn decode(data: &[u8]) -> Result<Self, Error>;
 }
 
 #[derive(Debug)]
@@ -82,7 +82,7 @@ impl IcmpV4HeaderData for IdentSeqData {
         buf
     }
 
-    fn decode(data: &[u8]) -> errors::Result<Self> {
+    fn decode(data: &[u8]) -> Result<Self, Error> {
         if data.len() == ICMPV4_HEADER_DATA_SIZE {
             let ident = (u16::from(data[0]) << 8) + u16::from(data[1]);
             let seq_cnt = (u16::from(data[2]) << 8) + u16::from(data[3]);
@@ -92,7 +92,7 @@ impl IcmpV4HeaderData for IdentSeqData {
                 seq_cnt: seq_cnt,
             })
         } else {
-            Err(errors::ErrorKind::InvalidHeaderDataSize.into())
+            Err(Error::InvalidHeaderDataSize)
         }
     }
 }
@@ -107,13 +107,13 @@ impl IcmpV4HeaderData for RawData {
         self.inner
     }
 
-    fn decode(data: &[u8]) -> errors::Result<Self> {
+    fn decode(data: &[u8]) -> Result<Self, Error> {
         if data.len() == ICMPV4_HEADER_DATA_SIZE {
             Ok(Self {
                 inner: [data[0], data[1], data[2], data[3]],
             })
         } else {
-            Err(errors::ErrorKind::InvalidHeaderDataSize.into())
+            Err(Error::InvalidHeaderDataSize)
         }
     }
 }
@@ -151,7 +151,7 @@ impl<'a, Data: IcmpV4HeaderData> RawIcmpV4Message<'a, Data> {
         buf
     }
 
-    pub fn decode(data: &'a [u8]) -> errors::Result<Self> {
+    pub fn decode(data: &'a [u8]) -> Result<Self, Error> {
         let header = IcmpV4Header::decode(&data[..ICMPV4_HEADER_SIZE])?;
         Ok(Self {
             header: header,
@@ -192,12 +192,12 @@ impl<'a> IcmpV4Message<'a> {
         }
     }
 
-    pub fn decode(data: &'a [u8]) -> errors::Result<Self> {
+    pub fn decode(data: &'a [u8]) -> Result<Self, Error> {
         Ok(match data.get(0).cloned() {
             Some(ECHO_REPLY) => IcmpV4Message::EchoReply(RawIcmpV4Message::decode(data)?),
             Some(ECHO_REQUEST) => IcmpV4Message::EchoRequest(RawIcmpV4Message::decode(data)?),
             Some(_) => IcmpV4Message::Unknown(RawIcmpV4Message::decode(data)?),
-            None => return Err(errors::ErrorKind::EmptyData.into())
+            None => return Err(Error::EmptyData)
         })
     }
 }

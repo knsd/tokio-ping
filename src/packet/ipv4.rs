@@ -1,12 +1,13 @@
-mod errors {
-    error_chain! {
-        errors {
-            TooSmallHeader
-            InvalidHeaderSize
-            InvalidVersion
-            UnknownProtocol
-        }
-    }
+#[derive(Debug, Fail)]
+pub enum Error {
+    #[fail(display = "too small header")]
+    TooSmallHeader,
+    #[fail(display = "invalid header size")]
+    InvalidHeaderSize,
+    #[fail(display = "invalid version")]
+    InvalidVersion,
+    #[fail(display = "unknown protocol")]
+    UnknownProtocol,
 }
 
 const MINIMUM_PACKET_SIZE: usize = 20;
@@ -31,25 +32,25 @@ pub struct IpV4Packet<'a> {
 }
 
 impl<'a> IpV4Packet<'a> {
-    pub fn decode(data: &'a [u8]) -> errors::Result<Self> {
+    pub fn decode(data: &'a [u8]) -> Result<Self, Error> {
         if data.len() < MINIMUM_PACKET_SIZE {
-            return Err(errors::ErrorKind::TooSmallHeader.into());
+            return Err(Error::TooSmallHeader);
         }
         let byte0 = data[0];
         let version = (byte0 & 0xf0) >> 4;
         let header_size = 4 * ((byte0 & 0x0f) as usize);
 
         if version != 4 {
-            return Err(errors::ErrorKind::InvalidVersion.into());
+            return Err(Error::InvalidVersion);
         }
 
         if data.len() < header_size {
-            return Err(errors::ErrorKind::InvalidHeaderSize.into());
+            return Err(Error::InvalidHeaderSize);
         }
 
         let protocol = match IpV4Protocol::decode(data[9]) {
             Some(protocol) => protocol,
-            None => return Err(errors::ErrorKind::UnknownProtocol.into()),
+            None => return Err(Error::UnknownProtocol),
         };
 
         Ok(Self {
