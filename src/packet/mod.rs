@@ -1,8 +1,6 @@
-mod icmpv4;
-mod icmpv6;
+mod icmp;
 mod ipv4;
 
-pub use self::icmpv4::IcmpV4Message;
-pub use self::icmpv6::IcmpV6Message;
+pub use self::icmp::{HEADER_SIZE as ICMP_HEADER_SIZE, IcmpV4, IcmpV6, EchoRequest, EchoReply};
 
 pub use self::ipv4::{IpV4Packet, IpV4Protocol};

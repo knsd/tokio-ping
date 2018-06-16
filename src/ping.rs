@@ -17,11 +17,15 @@ use tokio_reactor::Handle;
 use tokio_timer::Delay;
 
 use errors::{Error, ErrorKind};
-use packet::{IcmpV4Message, IcmpV6Message, IpV4Packet, IpV4Protocol};
+use packet::{IpV4Packet, IpV4Protocol};
+use packet::{ICMP_HEADER_SIZE, IcmpV4, IcmpV6, EchoRequest, EchoReply};
 use socket::{Socket, Send};
 
 const DEFAULT_TIMEOUT: u64 = 2;
-type Token = [u8; 32];
+const TOKEN_SIZE: usize = 24;
+const ECHO_REQUEST_BUFFER_SIZE: usize = ICMP_HEADER_SIZE + TOKEN_SIZE;
+type Token = [u8; TOKEN_SIZE];
+type EchoRequestBuffer = [u8; ECHO_REQUEST_BUFFER_SIZE];
 
 #[derive(Clone)]
 struct PingState {
@@ -52,6 +56,7 @@ pub struct PingFuture {
 
 enum PingFutureKind {
     Normal(NormalPingFutureKind),
+    PacketEncodeError,
     InvalidProtocol,
     Polled,
 }
@@ -61,7 +66,7 @@ struct NormalPingFutureKind {
     state: PingState,
     token: Token,
     delay: Delay,
-    send: Option<Send<Vec<u8>>>,
+    send: Option<Send<EchoRequestBuffer>>,
     receiver: oneshot::Receiver<f64>,
 }
 
@@ -105,6 +110,9 @@ impl Future for PingFuture {
             PingFutureKind::InvalidProtocol => {
                 return Err(ErrorKind::InvalidProtocol.into())
             }
+            PingFutureKind::PacketEncodeError => {
+                return Err(ErrorKind::InternalError.into())
+            }
             PingFutureKind::Polled => {
                 panic!("poll a PingFuture after it's done")
             }
@@ -121,7 +129,9 @@ impl Drop for PingFuture {
             PingFutureKind::Normal(ref normal) => {
                 normal.state.remove(&normal.token);
             }
-            PingFutureKind::InvalidProtocol | PingFutureKind::Polled => (),
+            | PingFutureKind::InvalidProtocol
+            | PingFutureKind::PacketEncodeError
+            | PingFutureKind::Polled => (),
         }
     }
 }
@@ -305,7 +315,7 @@ impl Pinger {
         let v4_finalize = if let Some(v4_socket) = sockets.v4() {
             let (s, r) = oneshot::channel();
             let receiver =
-                Receiver::<IcmpV4Message>::new(v4_socket.clone(), state.clone());
+                Receiver::<IcmpV4>::new(v4_socket.clone(), state.clone());
             spawn(receiver.select(r.map_err(|_| ())).then(|_| Ok(())));
             Some(s)
         } else {
@@ -315,7 +325,7 @@ impl Pinger {
         let v6_finalize = if let Some(v6_socket) = sockets.v6() {
             let (s, r) = oneshot::channel();
             let receiver =
-                Receiver::<IcmpV6Message>::new(v6_socket.clone(), state.clone());
+                Receiver::<IcmpV4>::new(v6_socket.clone(), state.clone());
             spawn(receiver.select(r.map_err(|_| ())).then(|_| Ok(())));
             Some(s)
         } else {
@@ -355,20 +365,28 @@ impl Pinger {
         self.inner.state.insert(token, sender);
 
         let dest = SocketAddr::new(hostname, 0);
+        let mut buffer = [0; ECHO_REQUEST_BUFFER_SIZE];
 
-        let (mb_socket, packet) = {
+        let request = EchoRequest {
+            ident: ident,
+            seq_cnt: seq_cnt,
+            payload: &token,
+        };
+
+        let (encode_result, mb_socket) = {
             if dest.is_ipv4() {
                 (
-                    self.inner.sockets.v4().cloned(),
-                    IcmpV4Message::echo_request(ident, seq_cnt, &token).encode(),
+                    request.encode::<IcmpV4>(&mut buffer[..]),
+                    self.inner.sockets.v4().cloned()
                 )
             } else {
                 (
+                    request.encode::<IcmpV6>(&mut buffer[..]),
                     self.inner.sockets.v6().cloned(),
-                    IcmpV6Message::echo_request(ident, seq_cnt, &token).encode(),
                 )
             }
         };
+
 
         let socket = match mb_socket {
             Some(socket) => socket,
@@ -379,7 +397,13 @@ impl Pinger {
             }
         };
 
-        let send_future =socket.send_to(packet, &dest);
+        if let Err(_) = encode_result {
+            return PingFuture {
+                inner: PingFutureKind::PacketEncodeError
+            }
+        }
+
+        let send_future = socket.send_to(buffer, &dest);
 
         PingFuture {
             inner: PingFutureKind::Normal(NormalPingFutureKind {
@@ -405,14 +429,14 @@ trait ParseReply {
     fn reply_payload(data: &[u8]) -> Option<&[u8]>;
 }
 
-impl<'b> ParseReply for IcmpV4Message<'b> {
+impl ParseReply for IcmpV4 {
     fn reply_payload(data: &[u8]) -> Option<&[u8]> {
         if let Ok(ipv4_packet) = IpV4Packet::decode(data) {
             if ipv4_packet.protocol != IpV4Protocol::Icmp {
                 return None;
             }
 
-            if let Ok(IcmpV4Message::EchoReply(reply)) = IcmpV4Message::decode(ipv4_packet.data) {
+            if let Ok(reply) = EchoReply::decode::<IcmpV4>(ipv4_packet.data) {
                 return Some(reply.payload);
             }
         }
@@ -420,9 +444,9 @@ impl<'b> ParseReply for IcmpV4Message<'b> {
     }
 }
 
-impl<'b> ParseReply for IcmpV6Message<'b> {
+impl ParseReply for IcmpV6 {
     fn reply_payload(data: &[u8]) -> Option<&[u8]> {
-        if let Ok(IcmpV6Message::EchoReply(reply)) = IcmpV6Message::decode(data) {
+        if let Ok(reply) = EchoReply::decode::<IcmpV6>(data) {
             return Some(reply.payload);
         }
         None
