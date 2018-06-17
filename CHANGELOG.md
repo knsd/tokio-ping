@@ -1,5 +1,12 @@
 Here you can see the full list of changes between each tokio-ping release.
 
+### Version 0.2.0 (2018-06-17)
+
+#### Refactorings
+* Use tokio instead of tokio-core
+* Use failure instead of error-chain
+* Simplify ICMP packets encoding and parsing
+
 ### Version 0.1.2 (2018-03-18)
 
 #### Fixes
