@@ -325,7 +325,7 @@ impl Pinger {
         let v6_finalize = if let Some(v6_socket) = sockets.v6() {
             let (s, r) = oneshot::channel();
             let receiver =
-                Receiver::<IcmpV4>::new(v6_socket.clone(), state.clone());
+                Receiver::<IcmpV6>::new(v6_socket.clone(), state.clone());
             spawn(receiver.select(r.map_err(|_| ())).then(|_| Ok(())));
             Some(s)
         } else {
