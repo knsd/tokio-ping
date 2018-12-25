@@ -1,13 +1,13 @@
 use std::io;
 use std::sync::Arc;
 
-use futures;
-use std::net::SocketAddr;
-use mio::Ready;
-use tokio_reactor::{Handle, PollEvented};
+use futures::try_ready;
 use socket2::{Domain, Protocol, SockAddr, Type};
+use std::net::SocketAddr;
+use tokio_reactor::{Handle, PollEvented};
 
-use socket::mio;
+use crate::socket::mio;
+use ::mio::Ready;
 
 #[derive(Clone)]
 pub struct Socket {
@@ -36,7 +36,7 @@ impl Socket {
             state: SendState::Writing {
                 socket: self.socket.clone(),
                 addr: target.clone().into(),
-                buf: buf,
+                buf,
             },
         }
     }

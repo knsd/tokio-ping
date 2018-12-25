@@ -7,11 +7,6 @@
 //! Note, sending and receiving ICMP packets requires privileges.
 //!
 //! ```rust,no_run
-//! extern crate futures;
-//! extern crate tokio;
-//!
-//! extern crate tokio_ping;
-//!
 //! use futures::{Future, Stream};
 //!
 //! fn main() {
@@ -35,21 +30,10 @@
 //! }
 //! ```
 
-#[macro_use] extern crate failure;
-#[macro_use] extern crate futures;
-extern crate libc;
-extern crate mio;
-extern crate rand;
-extern crate socket2;
-extern crate parking_lot;
-extern crate tokio_executor;
-extern crate tokio_reactor;
-extern crate tokio_timer;
-
 mod errors;
 mod packet;
 mod ping;
 mod socket;
 
-pub use errors::Error;
-pub use ping::{Pinger, PingChain, PingChainStream, PingFuture};
+pub use self::errors::Error;
+pub use self::ping::{PingChain, PingChainStream, PingFuture, Pinger};
