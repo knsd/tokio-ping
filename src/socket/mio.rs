@@ -2,8 +2,8 @@ use std::io;
 
 use std::os::unix::io::{AsRawFd, RawFd};
 
-use mio::{Evented, Poll, PollOpt, Ready, Token};
 use mio::unix::EventedFd;
+use mio::{Evented, Poll, PollOpt, Ready, Token};
 use socket2::{Domain, Protocol, SockAddr, Socket as Socket2, Type};
 
 pub struct Socket {
@@ -15,7 +15,7 @@ impl Socket {
         let socket = Socket2::new(domain, type_, Some(protocol))?;
         socket.set_nonblocking(true)?;
 
-        Ok(Self { socket: socket })
+        Ok(Self { socket })
     }
 
     pub fn send_to(&self, buf: &[u8], target: &SockAddr) -> io::Result<usize> {

@@ -10,11 +10,6 @@ tokio-ping is an asynchronous ICMP pinging library.
 Note, sending and receiving ICMP packets requires privileges.
 
 ```rust
-extern crate futures;
-extern crate tokio;
-
-extern crate tokio_ping;
-
 use futures::{Future, Stream};
 
 fn main() {
