@@ -58,7 +58,6 @@ enum PingFutureKind {
     Normal(NormalPingFutureKind),
     PacketEncodeError,
     InvalidProtocol,
-    Polled,
 }
 
 struct NormalPingFutureKind {
@@ -75,10 +74,7 @@ impl Future for PingFuture {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let mut kind = PingFutureKind::Polled;
-        ::std::mem::swap(&mut self.inner, &mut kind);
-
-        match kind {
+        match self.inner {
             PingFutureKind::Normal(ref mut normal) => {
                 let mut swap_send = false;
                 if let Some(ref mut send) = normal.send {
@@ -113,12 +109,7 @@ impl Future for PingFuture {
             PingFutureKind::PacketEncodeError => {
                 return Err(ErrorKind::InternalError.into())
             }
-            PingFutureKind::Polled => {
-                panic!("poll a PingFuture after it's done")
-            }
         }
-
-        ::std::mem::swap(&mut self.inner, &mut kind);
         Ok(Async::NotReady)
     }
 }
@@ -130,8 +121,7 @@ impl Drop for PingFuture {
                 normal.state.remove(&normal.token);
             }
             | PingFutureKind::InvalidProtocol
-            | PingFutureKind::PacketEncodeError
-            | PingFutureKind::Polled => (),
+            | PingFutureKind::PacketEncodeError => (),
         }
     }
 }
