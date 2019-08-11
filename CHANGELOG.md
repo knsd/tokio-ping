@@ -1,5 +1,11 @@
 Here you can see the full list of changes between each tokio-ping release.
 
+### Version 0.2.1 (2019-08-12)
+
+#### Fixes
+* IcmpV6 typo ([#8](https://github.com/knsd/tokio-ping/pull/8))
+* Memory leak ([#9](https://github.com/knsd/tokio-ping/pull/9))
+
 ### Version 0.2.0 (2018-06-17)
 
 #### Refactorings
