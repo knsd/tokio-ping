@@ -208,15 +208,14 @@ impl PingChain {
 /// Stream of sequential ping response times, iterates `None` if timed out.
 pub struct PingChainStream {
     chain: PingChain,
-    future: PingFuture,
+    future: Option<PingFuture>,
 }
 
 impl PingChainStream {
-    fn new(mut chain: PingChain) -> Self {
-        let future = chain.send();
+    fn new(chain: PingChain) -> Self {
         Self {
             chain: chain,
-            future: future,
+            future: None,
         }
     }
 }
@@ -226,9 +225,16 @@ impl Stream for PingChainStream {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        match self.future.poll() {
+        let future = match &mut self.future {
+            Some(ref mut future) => future,
+            None => {
+                self.future = Some(self.chain.send());
+                self.future.as_mut().unwrap()
+            },
+        };
+        match future.poll() {
             Ok(Async::Ready(item)) => {
-                self.future = self.chain.send();
+                self.future = None;
                 Ok(Async::Ready(Some(item)))
             }
             Ok(Async::NotReady) => Ok(Async::NotReady),
