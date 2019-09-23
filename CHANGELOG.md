@@ -1,5 +1,13 @@
 Here you can see the full list of changes between each tokio-ping release.
 
+### Version 0.3.0 (2019-09-23)
+
+#### Fixes
+* Make PingChainStream lazier ([#13](https://github.com/knsd/tokio-ping/pull/13))
+
+#### Refactorings
+* Use Duration instead of f64
+
 ### Version 0.2.1 (2019-08-12)
 
 #### Fixes
