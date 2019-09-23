@@ -225,19 +225,14 @@ impl Stream for PingChainStream {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let future = match &mut self.future {
-            Some(ref mut future) => future,
-            None => {
-                self.future = Some(self.chain.send());
-                self.future.as_mut().unwrap()
-            },
-        };
+        let mut future = self.future.take().unwrap_or_else(|| self.chain.send());
+
         match future.poll() {
-            Ok(Async::Ready(item)) => {
-                self.future = None;
-                Ok(Async::Ready(Some(item)))
-            }
-            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Ok(Async::Ready(item)) => Ok(Async::Ready(Some(item))),
+            Ok(Async::NotReady) => {
+                self.future = Some(future);
+                Ok(Async::NotReady)
+            },
             Err(err) => Err(err),
         }
     }
