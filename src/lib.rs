@@ -22,7 +22,7 @@
 //!     let future = stream.and_then(|stream| {
 //!         stream.take(3).for_each(|mb_time| {
 //!             match mb_time {
-//!                 Some(time) => println!("time={}", time),
+//!                 Some(time) => println!("time={:?}", time),
 //!                 None => println!("timeout"),
 //!             }
 //!             Ok(())
@@ -41,7 +41,6 @@ extern crate libc;
 extern crate mio;
 extern crate rand;
 extern crate socket2;
-extern crate time;
 extern crate parking_lot;
 extern crate tokio_executor;
 extern crate tokio_reactor;

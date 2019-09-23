@@ -13,7 +13,7 @@ fn main() {
     let future = stream.and_then(|stream| {
         stream.take(3).for_each(|mb_time| {
             match mb_time {
-                Some(time) => println!("time={}", time),
+                Some(time) => println!("time={:?}", time),
                 None => println!("timeout"),
             }
             Ok(())

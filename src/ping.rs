@@ -10,7 +10,6 @@ use futures::sync::oneshot;
 use rand::random;
 use parking_lot::Mutex;
 use socket2::{Domain, Protocol, Type};
-use time::precise_time_s;
 
 use tokio_executor::spawn;
 use tokio_reactor::Handle;
@@ -29,7 +28,7 @@ type EchoRequestBuffer = [u8; ECHO_REQUEST_BUFFER_SIZE];
 
 #[derive(Clone)]
 struct PingState {
-    inner: Arc<Mutex<HashMap<Token, oneshot::Sender<f64>>>>,
+    inner: Arc<Mutex<HashMap<Token, oneshot::Sender<Instant>>>>,
 }
 
 impl PingState {
@@ -39,11 +38,11 @@ impl PingState {
         }
     }
 
-    fn insert(&self, key: Token, value: oneshot::Sender<f64>) {
+    fn insert(&self, key: Token, value: oneshot::Sender<Instant>) {
         self.inner.lock().insert(key, value);
     }
 
-    fn remove(&self, key: &[u8]) -> Option<oneshot::Sender<f64>> {
+    fn remove(&self, key: &[u8]) -> Option<oneshot::Sender<Instant>> {
         self.inner.lock().remove(key)
     }
 }
@@ -61,16 +60,16 @@ enum PingFutureKind {
 }
 
 struct NormalPingFutureKind {
-    start_time: f64,
+    start_time: Instant,
     state: PingState,
     token: Token,
     delay: Delay,
     send: Option<Send<EchoRequestBuffer>>,
-    receiver: oneshot::Receiver<f64>,
+    receiver: oneshot::Receiver<Instant>,
 }
 
 impl Future for PingFuture {
-    type Item = Option<f64>;
+    type Item = Option<Duration>;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -221,7 +220,7 @@ impl PingChainStream {
 }
 
 impl Stream for PingChainStream {
-    type Item = Option<f64>;
+    type Item = Option<Duration>;
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
@@ -398,7 +397,7 @@ impl Pinger {
 
         PingFuture {
             inner: PingFutureKind::Normal(NormalPingFutureKind {
-                start_time: precise_time_s(),
+                start_time: Instant::now(),
                 state: self.inner.state.clone(),
                 token: token,
                 delay: Delay::new(deadline),
@@ -463,7 +462,7 @@ impl<Message: ParseReply> Future for Receiver<Message> {
         match self.socket.recv(&mut self.buffer) {
             Ok(Async::Ready(bytes)) => {
                 if let Some(payload) = Message::reply_payload(&self.buffer[..bytes]) {
-                    let now = precise_time_s();
+                    let now = Instant::now();
                     if let Some(sender) = self.state.remove(payload) {
                         sender.send(now).unwrap_or_default()
                     }
