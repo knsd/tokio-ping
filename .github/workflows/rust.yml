@@ -30,28 +30,6 @@ jobs:
         with:
           command: check
 
-  test:
-    name: Test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - ubuntu-latest
-          - macOS-latest
-        rust:
-          - stable
-          - beta
-          - nightly
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v1
-
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ matrix.rust }}
-          override: true
-
       - name: Run cargo test
         uses: actions-rs/cargo@v1
         with:
