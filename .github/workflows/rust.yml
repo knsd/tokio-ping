@@ -5,9 +5,12 @@ on: [push, pull_request]
 jobs:
   check:
     name: Check
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os:
+          - ubuntu-latest
+          - macOS-latest
         rust:
           - stable
           - beta
@@ -29,9 +32,12 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os:
+          - ubuntu-latest
+          - macOS-latest
         rust:
           - stable
           - beta
