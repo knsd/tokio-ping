@@ -37,14 +37,6 @@
 
 #[macro_use] extern crate failure;
 #[macro_use] extern crate futures;
-extern crate libc;
-extern crate mio;
-extern crate rand;
-extern crate socket2;
-extern crate parking_lot;
-extern crate tokio_executor;
-extern crate tokio_reactor;
-extern crate tokio_timer;
 
 mod errors;
 mod packet;
