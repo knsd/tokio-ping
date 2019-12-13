@@ -3,11 +3,10 @@ use std::sync::Arc;
 use std::task::{Poll, Context};
 use std::pin::Pin;
 
-use futures::future::{Future, FutureExt, select};
+use std::future::Future;
 use std::net::SocketAddr;
 use ::mio::Ready;
-use tokio_net::util::PollEvented;
-use tokio_net::driver::Handle;
+use tokio::io::PollEvented;
 use socket2::{Domain, Protocol, SockAddr, Type};
 
 use super::mio;
@@ -22,10 +21,9 @@ impl Socket {
         domain: Domain,
         type_: Type,
         protocol: Protocol,
-        handle: &Handle,
     ) -> io::Result<Self> {
         let socket = mio::Socket::new(domain, type_, protocol)?;
-        let socket = PollEvented::new_with_handle(socket, handle)?;
+        let socket = PollEvented::new(socket)?;
         Ok(Self {
             socket: Arc::new(socket),
         })

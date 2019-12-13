@@ -36,7 +36,6 @@
 //! ```
 
 #[macro_use] extern crate failure;
-#[macro_use] extern crate futures;
 
 mod errors;
 mod packet;

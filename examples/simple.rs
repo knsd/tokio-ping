@@ -5,7 +5,7 @@ extern crate tokio_ping;
 
 use crate::futures::{StreamExt, future};
 
-#[tokio::main]
+#[tokio::main(basic_scheduler)]
 async fn main() {
     let addr = std::env::args().nth(1).unwrap().parse().unwrap();
 
@@ -15,7 +15,7 @@ async fn main() {
         match mb_time {
             Ok(Some(time)) => println!("time={:?}", time),
             Ok(None) => println!("timeout"),
-            Err(err) => println!("{:?}", err)
+            Err(err) => println!("error: {:?}", err)
         }
         future::ready(())
     }).await;

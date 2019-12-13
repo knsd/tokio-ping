@@ -17,7 +17,8 @@ libc = "0.2"
 mio = "0.6"
 rand = "0.4"
 socket2 = "0.3"
-tokio = { version = "0.2.1", features = ["rt-core"] }
-tokio-net = "0.2.0-alpha.6"
-tokio-timer = "0.3.0-alpha.5"
+tokio = { version = "0.2.4", features = ["rt-core", "io-driver", "time"] }
 parking_lot = "0.5.5"
+
+[dev-dependencies]
+tokio = { version = "0.2.4", features = ["rt-core", "io-driver", "time", "macros"] }

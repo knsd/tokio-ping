@@ -14,10 +14,7 @@ use rand::random;
 use parking_lot::Mutex;
 use socket2::{Domain, Protocol, Type};
 
-use tokio::spawn;
-use tokio_net::util::PollEvented;
-use tokio_net::driver::Handle;
-use tokio_timer::{Delay, delay};
+use tokio::time::{delay_until, Delay};
 
 use crate::errors::{Error, ErrorKind};
 use crate::packet::{IpV4Packet, IpV4Protocol};
@@ -79,6 +76,7 @@ impl Future for PingFuture {
         match self.inner {
             PingFutureKind::Normal(ref mut normal) => {
                 let mut swap_send = false;
+
                 if let Some(ref mut send) = normal.send {
                     match Pin::new(send).poll(cx) {
                         Poll::Pending => (),
@@ -86,6 +84,7 @@ impl Future for PingFuture {
                         Poll::Ready(Err(_)) => return Poll::Ready(Err(ErrorKind::InternalError.into())),
                     }
                 }
+
 
                 if swap_send {
                     normal.send = None;
@@ -257,9 +256,9 @@ enum Sockets {
 }
 
 impl Sockets {
-    fn new(handle: &Handle) -> io::Result<Self> {
-        let mb_v4socket = Socket::new(Domain::ipv4(), Type::raw(), Protocol::icmpv4(), handle);
-        let mb_v6socket = Socket::new(Domain::ipv6(), Type::raw(), Protocol::icmpv6(), handle);
+    fn new() -> io::Result<Self> {
+        let mb_v4socket = Socket::new(Domain::ipv4(), Type::raw(), Protocol::icmpv4());
+        let mb_v6socket = Socket::new(Domain::ipv6(), Type::raw(), Protocol::icmpv6());
         match (mb_v4socket, mb_v6socket) {
             (Ok(v4_socket), Ok(v6_socket)) => Ok(Sockets::Both {
                 v4: v4_socket,
@@ -291,13 +290,7 @@ impl Sockets {
 impl Pinger {
     /// Create new `Pinger` instance, will fail if unable to create both IPv4 and IPv6 sockets.
     pub async fn new() -> Result<Self, Error> {
-        futures::future::lazy(|_cx|
-            Self::with_handle(&Handle::default()).map_err(From::from)
-        ).await
-    }
-
-    fn with_handle(handle: &Handle) -> io::Result<Self> {
-        let sockets = Sockets::new(handle)?;
+        let sockets = Sockets::new()?;
 
         let state = PingState::new();
 
@@ -305,7 +298,7 @@ impl Pinger {
             let (s, r) = oneshot::channel();
             let receiver =
                 Receiver::<IcmpV4>::new(v4_socket.clone(), state.clone());
-            spawn(select(receiver, r).map(|_| ()));
+            tokio::spawn(select(receiver, r).map(|_| ()));
             Some(s)
         } else {
             None
@@ -315,7 +308,7 @@ impl Pinger {
             let (s, r) = oneshot::channel();
             let receiver =
                 Receiver::<IcmpV6>::new(v6_socket.clone(), state.clone());
-            spawn(select(receiver, r).map(|_| ()));
+            tokio::spawn(select(receiver, r).map(|_| ()));
             Some(s)
         } else {
             None
@@ -399,7 +392,7 @@ impl Pinger {
                 start_time: Instant::now(),
                 state: self.inner.state.clone(),
                 token: token,
-                delay: tokio_timer::delay(deadline),
+                delay: delay_until(deadline.into()),
                 send: Some(send_future),
                 receiver: receiver,
             })
