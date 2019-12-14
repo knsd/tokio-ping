@@ -1,3 +1,5 @@
+use failure::Fail;
+
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display = "too small header")]
@@ -54,7 +56,7 @@ impl<'a> IpV4Packet<'a> {
         };
 
         Ok(Self {
-            protocol: protocol,
+            protocol,
             data: &data[header_size..],
         })
     }

@@ -20,7 +20,5 @@ fn main() {
         })
     });
 
-    tokio::run(future.map_err(|err| {
-        eprintln!("Error: {}", err)
-    }))
+    tokio::run(future.map_err(|err| eprintln!("Error: {}", err)))
 }
