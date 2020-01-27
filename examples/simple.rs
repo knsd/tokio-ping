@@ -5,7 +5,7 @@ extern crate tokio_ping;
 
 use crate::futures::{StreamExt, future};
 
-#[tokio::main(basic_scheduler)]
+#[tokio::main]
 async fn main() {
     let addr = std::env::args().nth(1).unwrap().parse().unwrap();
 
