@@ -350,8 +350,8 @@ impl Pinger {
         let mut buffer = [0; ECHO_REQUEST_BUFFER_SIZE];
 
         let request = EchoRequest {
-            ident: ident,
-            seq_cnt: seq_cnt,
+            ident,
+            seq_cnt,
             payload: &token,
         };
 
@@ -391,10 +391,10 @@ impl Pinger {
             inner: PingFutureKind::Normal(NormalPingFutureKind {
                 start_time: Instant::now(),
                 state: self.inner.state.clone(),
-                token: token,
+                token,
                 delay: delay_until(deadline.into()),
                 send: Some(send_future),
-                receiver: receiver,
+                receiver,
             })
         }
     }
@@ -437,8 +437,8 @@ impl ParseReply for IcmpV6 {
 impl<Proto> Receiver<Proto> {
     fn new(socket: Socket, state: PingState) -> Self {
         Self {
-            socket: socket,
-            state: state,
+            socket,
+            state,
             _phantom: ::std::marker::PhantomData,
         }
     }

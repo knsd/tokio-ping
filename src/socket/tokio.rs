@@ -51,7 +51,7 @@ impl Socket {
         }
 
         match self.socket.get_ref().recv(buffer) {
-            Ok(n) => Poll::Ready(Ok(n.into())),
+            Ok(n) => Poll::Ready(Ok(n)),
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                 self.socket.clear_read_ready(cx, Ready::readable())?;
                 Poll::Pending
@@ -87,7 +87,7 @@ fn send_to(
     }
 
     match socket.get_ref().send_to(buf, target) {
-        Ok(n) => Poll::Ready(Ok(n.into())),
+        Ok(n) => Poll::Ready(Ok(n)),
         Err(e) => {
             if e.kind() == io::ErrorKind::WouldBlock {
                 socket.clear_write_ready(cx)?;
