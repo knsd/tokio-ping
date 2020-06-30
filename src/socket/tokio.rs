@@ -1,13 +1,15 @@
 use std::io;
 use std::sync::Arc;
+use std::task::{Poll, Context};
+use std::pin::Pin;
 
-use futures;
+use std::future::Future;
 use std::net::SocketAddr;
-use mio::Ready;
-use tokio_reactor::{Handle, PollEvented};
+use ::mio::Ready;
+use tokio::io::PollEvented;
 use socket2::{Domain, Protocol, SockAddr, Type};
 
-use socket::mio;
+use super::mio;
 
 #[derive(Clone)]
 pub struct Socket {
@@ -19,10 +21,9 @@ impl Socket {
         domain: Domain,
         type_: Type,
         protocol: Protocol,
-        handle: &Handle,
     ) -> io::Result<Self> {
         let socket = mio::Socket::new(domain, type_, protocol)?;
-        let socket = PollEvented::new_with_handle(socket, handle)?;
+        let socket = PollEvented::new(socket)?;
         Ok(Self {
             socket: Arc::new(socket),
         })
@@ -41,16 +42,21 @@ impl Socket {
         }
     }
 
-    pub fn recv(&self, buffer: &mut [u8]) -> futures::Poll<usize, io::Error> {
-        try_ready!(self.socket.poll_read_ready(Ready::readable()));
+    pub fn recv(&self, buffer: &mut [u8], cx: &mut Context<'_>) -> Poll<Result<usize, io::Error>> {
+
+        match self.socket.poll_read_ready(cx, Ready::readable()) {
+            Poll::Ready(Ok(_)) => (),
+            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+            Poll::Pending => return Poll::Pending,
+        }
 
         match self.socket.get_ref().recv(buffer) {
-            Ok(n) => Ok(n.into()),
+            Ok(n) => Poll::Ready(Ok(n)),
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                self.socket.clear_read_ready(Ready::readable())?;
-                Ok(futures::Async::NotReady)
+                self.socket.clear_read_ready(cx, Ready::readable())?;
+                Poll::Pending
             }
-            Err(e) => Err(e),
+            Err(e) => Poll::Ready(Err(e)),
         }
     }
 }
@@ -72,49 +78,57 @@ fn send_to(
     socket: &Arc<PollEvented<mio::Socket>>,
     buf: &[u8],
     target: &SockAddr,
-) -> futures::Poll<usize, io::Error> {
-    try_ready!(socket.poll_write_ready());
+    cx: &mut Context<'_>
+) -> Poll<Result<usize, io::Error>> {
+    match socket.poll_write_ready(cx) {
+        Poll::Ready(Ok(_)) => (),
+        Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+        Poll::Pending => return Poll::Pending
+    }
 
     match socket.get_ref().send_to(buf, target) {
-        Ok(n) => Ok(n.into()),
+        Ok(n) => Poll::Ready(Ok(n)),
         Err(e) => {
             if e.kind() == io::ErrorKind::WouldBlock {
-                socket.clear_write_ready()?;
-                Ok(futures::Async::NotReady)
+                socket.clear_write_ready(cx)?;
+                Poll::Pending
             } else {
-                Err(e)
+                Poll::Ready(Err(e))
             }
         }
     }
 }
 
-impl<T> futures::Future for Send<T>
+impl<T> Future for Send<T>
 where
-    T: AsRef<[u8]>,
+    T: AsRef<[u8]> + Unpin,
 {
-    type Item = ();
-    type Error = io::Error;
+    type Output = Result<(), io::Error>;
 
-    fn poll(&mut self) -> futures::Poll<(), io::Error> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.state {
             SendState::Writing {
                 ref socket,
                 ref buf,
                 ref addr,
             } => {
-                let n = try_ready!(send_to(socket, buf.as_ref(), addr));
+                let n = match send_to(socket, buf.as_ref(), addr, cx) {
+                    Poll::Ready(Ok(n)) => n,
+                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                    Poll::Pending => return Poll::Pending,
+                };
                 if n != buf.as_ref().len() {
-                    return Err(io::Error::new(
+                    return Poll::Ready(Err(io::Error::new(
                         io::ErrorKind::Other,
                         "failed to send entire packet",
-                    ));
+                    )));
                 }
             }
             SendState::Empty => panic!("poll a Send after it's done"),
         }
 
         match ::std::mem::replace(&mut self.state, SendState::Empty) {
-            SendState::Writing { .. } => Ok(futures::Async::Ready(())),
+            SendState::Writing { .. } => Poll::Ready(Ok(())),
             SendState::Empty => unreachable!(),
         }
     }

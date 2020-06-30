@@ -7,44 +7,26 @@
 //! Note, sending and receiving ICMP packets requires privileges.
 //!
 //! ```rust,no_run
-//! extern crate futures;
-//! extern crate tokio;
+//! use futures::{future, StreamExt};
 //!
-//! extern crate tokio_ping;
-//!
-//! use futures::{Future, Stream};
-//!
-//! fn main() {
+//! #[tokio::main]
+//! async fn main() {
 //!     let addr = std::env::args().nth(1).unwrap().parse().unwrap();
 //!
-//!     let pinger = tokio_ping::Pinger::new();
-//!     let stream = pinger.and_then(move |pinger| Ok(pinger.chain(addr).stream()));
-//!     let future = stream.and_then(|stream| {
-//!         stream.take(3).for_each(|mb_time| {
-//!             match mb_time {
-//!                 Some(time) => println!("time={:?}", time),
-//!                 None => println!("timeout"),
-//!             }
-//!             Ok(())
-//!         })
-//!     });
-//!
-//!     tokio::run(future.map_err(|err| {
-//!         eprintln!("Error: {}", err)
-//!     }))
+//!     let pinger = tokio_ping::Pinger::new().await.unwrap();
+//!     let stream = pinger.chain(addr).stream();
+//!     stream.take(3).for_each(|mb_time| {
+//!         match mb_time {
+//!             Ok(Some(time)) => println!("time={:?}", time),
+//!             Ok(None) => println!("timeout"),
+//!             Err(err) => println!("error: {:?}", err)
+//!         }
+//!         future::ready(())
+//!     }).await;
 //! }
 //! ```
 
 #[macro_use] extern crate failure;
-#[macro_use] extern crate futures;
-extern crate libc;
-extern crate mio;
-extern crate rand;
-extern crate socket2;
-extern crate parking_lot;
-extern crate tokio_executor;
-extern crate tokio_reactor;
-extern crate tokio_timer;
 
 mod errors;
 mod packet;

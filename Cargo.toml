@@ -8,18 +8,17 @@ repository = "https://github.com/knsd/tokio-ping"
 description = "Asynchronous ICMP pinging library"
 keywords = ["tokio", "icmp", "ping"]
 categories = ["network-programming", "asynchronous"]
+edition = "2018"
 
 [dependencies]
 failure = "0.1.1"
-futures = "0.1"
+futures = "0.3.1"
 libc = "0.2"
 mio = "0.6"
 rand = "0.4"
 socket2 = "0.3"
-tokio-executor="0.1.2"
-tokio-reactor = "0.1.1"
-tokio-timer = "0.2.3"
+tokio = { version = "0.2.4", features = ["rt-core", "io-driver", "time"] }
 parking_lot = "0.5.5"
 
 [dev-dependencies]
-tokio = "0.1"
+tokio = { version = "0.2.4", features = ["rt-core", "io-driver", "time", "macros"] }
