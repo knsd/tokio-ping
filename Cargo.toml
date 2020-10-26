@@ -16,9 +16,9 @@ libc = "0.2"
 mio = "0.6"
 rand = "0.4"
 socket2 = "0.3"
-tokio-executor="0.1.2"
-tokio-reactor = "0.1.1"
-tokio-timer = "0.2.3"
+tokio-executor="0.1.10"
+tokio-reactor = "0.1.12"
+tokio-timer = "0.2.13"
 parking_lot = "0.5.5"
 
 [dev-dependencies]
