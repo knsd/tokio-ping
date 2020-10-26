@@ -8,6 +8,7 @@ repository = "https://github.com/knsd/tokio-ping"
 description = "Asynchronous ICMP pinging library"
 keywords = ["tokio", "icmp", "ping"]
 categories = ["network-programming", "asynchronous"]
+edition = "2018"
 
 [dependencies]
 failure = "0.1.1"

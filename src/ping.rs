@@ -15,10 +15,10 @@ use tokio_executor::spawn;
 use tokio_reactor::Handle;
 use tokio_timer::Delay;
 
-use errors::{Error, ErrorKind};
-use packet::{IpV4Packet, IpV4Protocol};
-use packet::{ICMP_HEADER_SIZE, IcmpV4, IcmpV6, EchoRequest, EchoReply};
-use socket::{Socket, Send};
+use crate::errors::{Error, ErrorKind};
+use crate::packet::{IpV4Packet, IpV4Protocol};
+use crate::packet::{ICMP_HEADER_SIZE, IcmpV4, IcmpV6, EchoRequest, EchoReply};
+use crate::socket::{Socket, Send};
 
 const DEFAULT_TIMEOUT: u64 = 2;
 const TOKEN_SIZE: usize = 24;

@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use futures;
 use std::net::SocketAddr;
-use mio::Ready;
+use crate::mio::Ready;
 use tokio_reactor::{Handle, PollEvented};
 use socket2::{Domain, Protocol, SockAddr, Type};
 
-use socket::mio;
+use crate::socket::mio;
 
 #[derive(Clone)]
 pub struct Socket {
