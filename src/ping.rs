@@ -137,8 +137,8 @@ pub struct PingChain {
 impl PingChain {
     fn new(pinger: Pinger, hostname: IpAddr) -> Self {
         Self {
-            pinger: pinger,
-            hostname: hostname,
+            pinger,
+            hostname,
             ident: None,
             seq_cnt: None,
             timeout: None,
@@ -213,7 +213,7 @@ pub struct PingChainStream {
 impl PingChainStream {
     fn new(chain: PingChain) -> Self {
         Self {
-            chain: chain,
+            chain,
             future: None,
         }
     }
@@ -323,8 +323,8 @@ impl Pinger {
         };
 
         let inner = PingInner {
-            sockets: sockets,
-            state: state,
+            sockets,
+            state,
             _v4_finalize: v4_finalize,
             _v6_finalize: v6_finalize,
         };
@@ -358,8 +358,8 @@ impl Pinger {
         let mut buffer = [0; ECHO_REQUEST_BUFFER_SIZE];
 
         let request = EchoRequest {
-            ident: ident,
-            seq_cnt: seq_cnt,
+            ident,
+            seq_cnt,
             payload: &token,
         };
 
@@ -387,7 +387,7 @@ impl Pinger {
             }
         };
 
-        if let Err(_) = encode_result {
+        if encode_result.is_err() {
             return PingFuture {
                 inner: PingFutureKind::PacketEncodeError
             }
@@ -399,10 +399,10 @@ impl Pinger {
             inner: PingFutureKind::Normal(NormalPingFutureKind {
                 start_time: Instant::now(),
                 state: self.inner.state.clone(),
-                token: token,
+                token,
                 delay: Delay::new(deadline),
                 send: Some(send_future),
-                receiver: receiver,
+                receiver,
             })
         }
     }
@@ -446,8 +446,8 @@ impl ParseReply for IcmpV6 {
 impl<Proto> Receiver<Proto> {
     fn new(socket: Socket, state: PingState) -> Self {
         Self {
-            socket: socket,
-            state: state,
+            socket,
+            state,
             buffer: [0; 2048],
             _phantom: ::std::marker::PhantomData,
         }

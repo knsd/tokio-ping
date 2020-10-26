@@ -8,7 +8,7 @@ pub struct Error {
 }
 
 impl Fail for Error {
-    fn cause(&self) -> Option<&Fail> {
+    fn cause(&self) -> Option<&dyn Fail> {
         self.inner.cause()
     }
 
@@ -31,7 +31,7 @@ impl From<ErrorKind> for Error {
 
 impl From<Context<ErrorKind>> for Error {
     fn from(inner: Context<ErrorKind>) -> Error {
-        Error { inner: inner }
+        Error { inner }
     }
 }
 
@@ -47,7 +47,7 @@ impl From<::std::io::Error> for Error {
 
 #[derive(Debug, Fail)]
 pub enum ErrorKind {
-    #[fail(display = "invalid procotol")]
+    #[fail(display = "invalid protocol")]
     InvalidProtocol,
     #[fail(display = "internal error")]
     InternalError,
