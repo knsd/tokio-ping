@@ -258,8 +258,8 @@ enum Sockets {
 
 impl Sockets {
     fn new(handle: &Handle) -> io::Result<Self> {
-        let mb_v4socket = Socket::new(Domain::ipv4(), Type::raw(), Protocol::icmpv4(), handle);
-        let mb_v6socket = Socket::new(Domain::ipv6(), Type::raw(), Protocol::icmpv6(), handle);
+        let mb_v4socket = Socket::new(Domain::IPV4, Type::RAW, Protocol::ICMPV4, handle);
+        let mb_v6socket = Socket::new(Domain::IPV6, Type::RAW, Protocol::ICMPV6, handle);
         match (mb_v4socket, mb_v6socket) {
             (Ok(v4_socket), Ok(v6_socket)) => Ok(Sockets::Both {
                 v4: v4_socket,

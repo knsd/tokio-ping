@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Read};
 
 use std::os::unix::io::{AsRawFd, RawFd};
 
@@ -23,7 +23,7 @@ impl Socket {
     }
 
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
-        self.socket.recv(buf)
+        (&self.socket).read(buf)
     }
 }
 
