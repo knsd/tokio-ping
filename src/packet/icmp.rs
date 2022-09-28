@@ -50,7 +50,7 @@ impl<'a> EchoRequest<'a> {
         buffer[6] = (self.seq_cnt >> 8) as u8;
         buffer[7] = self.seq_cnt as u8;
 
-        if let Err(_) = (&mut buffer[8..]).write(self.payload) {
+        if (&mut buffer[8..]).write(self.payload).is_err() {
             return Err(Error::InvalidSize)
         }
 
