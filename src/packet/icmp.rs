@@ -73,7 +73,7 @@ impl<'a> EchoReply<'a> {
 
         let type_ = buffer[0];
         let code = buffer[1];
-        if type_ != P::ECHO_REPLY_TYPE && code != P::ECHO_REPLY_CODE {
+        if type_ != P::ECHO_REPLY_TYPE || code != P::ECHO_REPLY_CODE {
             return Err(Error::InvalidPacket)
         }
 
